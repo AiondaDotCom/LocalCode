@@ -323,11 +323,17 @@ sub direct_prompt {
         }
     }
     
-    # Inject system prompt
-    my $full_prompt = $ui->inject_system_prompt($prompt);
+    # Create a temporary session for direct prompts
+    my $session = LocalCode::Session->new();
+    $session->new_session('direct_prompt');
+    $session->add_message('user', $prompt);
     
-    # Send to Ollama
-    my $response = $client->chat($full_prompt);
+    # Get system prompt and create messages array
+    my $system_prompt = $ui->get_system_prompt();
+    my $messages = $session->get_messages_for_chat($system_prompt);
+    
+    # Send to Ollama with full context
+    my $response = $client->chat("", undef, $messages);
     
     # Parse tool calls and execute them
     my @tool_calls = $ui->parse_tool_calls($response);
@@ -599,12 +605,17 @@ sub interactive_mode {
             my $follow_up_response = $client->chat("", undef, $follow_up_messages);
             $stop_loading2->();
             
-            # Add follow-up response to session
-            if (!ref $follow_up_response) {
+            # Add follow-up response to session and display
+            if (!ref $follow_up_response && $follow_up_response && $follow_up_response !~ /^Error:/) {
                 $session->add_message('assistant', $follow_up_response);
+                print "Follow-up: $follow_up_response\n\n";
+            } elsif ($follow_up_response =~ /^Error:/) {
+                print "⚠️  Follow-up failed: $follow_up_response\n";
+                print "   Tool execution was successful, but AI follow-up had issues.\n\n";
+            } else {
+                print "⚠️  Follow-up response was empty or invalid.\n";
+                print "   Tool execution was successful, continuing without follow-up.\n\n";
             }
-            
-            print "Follow-up: $follow_up_response\n\n";
         }
         
         print "\n$response\n\n";

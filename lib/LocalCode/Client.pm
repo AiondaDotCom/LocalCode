@@ -201,7 +201,23 @@ sub chat {
     
     if ($response->is_success) {
         my $data = eval { JSON->new->decode($response->content) };
-        return $data->{message}->{content} if $data && $data->{message} && $data->{message}->{content};
+        if ($data) {
+            # Handle different Ollama response formats
+            if ($data->{message} && $data->{message}->{content}) {
+                return $data->{message}->{content};
+            } elsif ($data->{response}) {
+                # Fallback to old /api/generate format
+                return $data->{response};
+            } elsif ($data->{content}) {
+                # Another possible format
+                return $data->{content};
+            } else {
+                # Debug: show what we actually got
+                return "Error: Unexpected response format. Got: " . substr($response->content, 0, 200) . "...";
+            }
+        } else {
+            return "Error: Invalid JSON response from Ollama";
+        }
     }
     
     # Check for context length exceeded error

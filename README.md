@@ -32,6 +32,8 @@ A compact, Perl-based AI coding agent that provides an interactive terminal inte
 
 ## Installation
 
+### Quick Install (Recommended)
+
 1. Clone the repository:
 ```bash
 git clone <repository-url>
@@ -43,14 +45,27 @@ cd localcode
 cpan YAML::XS JSON HTTP::Tiny Term::ReadLine::Gnu
 ```
 
-3. Make the script executable:
+3. Build and install:
 ```bash
-chmod +x bin/localcode
+make install
+```
+
+This creates a single-file distribution and installs it to `~/bin/localcode`. Add `~/bin` to your PATH:
+```bash
+export PATH=$HOME/bin:$PATH
 ```
 
 4. Ensure Ollama is running:
 ```bash
 ollama serve
+```
+
+### Development Install
+
+For development work, you can run directly from the source:
+```bash
+chmod +x bin/localcode
+./bin/localcode
 ```
 
 ## Usage
@@ -59,7 +74,9 @@ ollama serve
 
 Start the interactive terminal:
 ```bash
-./bin/localcode
+localcode  # If installed via make install
+# or
+./bin/localcode  # If running from source
 ```
 
 ### Available Slash Commands

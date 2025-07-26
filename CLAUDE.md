@@ -1,8 +1,10 @@
 # LocalCode - Perl-based AI Coding Agent
 
+![LocalCode in Action](example.png)
+
 ## Project Overview
 
-LocalCode is an ultra-minimal, Perl-based AI coding agent designed exclusively for Ollama. Built with Test-Driven Development for maximum reliability and autonomous testing.
+LocalCode is an ultra-minimal, Perl-based AI coding agent designed exclusively for Ollama. Built with Test-Driven Development for maximum reliability and autonomous testing. **Status: Production Ready** with 310+ tests passing.
 
 ## Architecture
 
@@ -27,7 +29,7 @@ LocalCode is an ultra-minimal, Perl-based AI coding agent designed exclusively f
 
 ## Test Coverage
 
-**102/250+ tests passing** - Complete TDD implementation
+**310+ tests passing** - Complete TDD implementation with production-ready features
 
 ```bash
 # Run tests

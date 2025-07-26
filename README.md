@@ -2,15 +2,22 @@
 
 A compact, Perl-based AI coding agent that provides an interactive terminal interface for AI-assisted programming tasks using local Ollama models.
 
+![LocalCode in Action](example.png)
+
+*LocalCode executing multiple tool calls in sequence: creating a Perl calculator, making it executable, and testing it - all from a single AI prompt.*
+
 ## Features
 
 - **Local AI Models**: Works exclusively with Ollama - no cloud dependencies
 - **Interactive Terminal UI**: Command-line interface with slash commands and TAB completion
+- **Multiple Tool Execution**: AI can execute multiple tools in sequence for complete workflows
 - **Tool Execution**: Secure permission-based system for running AI-requested tools
 - **Comprehensive Tool Set**: 14 built-in tools including bash, read, write, edit, grep, glob, patch, webfetch, and more
 - **XML Tool Parsing**: Robust parser for AI-generated tool calls with embedded quotes and complex content
+- **Conversation Context**: Full conversation history preserved using Ollama's /api/chat endpoint
+- **Smart Context Management**: Automatic history truncation when context limits are exceeded
 - **Session Management**: Persistent conversation history with JSON storage
-- **Test-Driven Development**: 290+ comprehensive tests ensuring reliability
+- **Test-Driven Development**: 310+ comprehensive tests ensuring reliability
 - **Ultra-Compact**: ~1000 lines of Perl code for minimal LLM context usage
 
 ## Requirements

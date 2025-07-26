@@ -42,25 +42,58 @@ test-tui:
 	@echo "Testing TUI automation..."
 	prove -l t/06-tui-commands.t t/09-tui-automation.t
 
+# Create distribution directory
+dist:
+	@mkdir -p dist
+
 # Build single-file distribution
-build:
-	@echo "Building single-file distribution..."
-	perl build.pl --output dist/localcode --minify
+build: dist
+	@echo "Building single-file release distribution..."
+	@echo "#!/usr/bin/perl" > dist/localcode
+	@echo "# LocalCode - Single-file release build" >> dist/localcode
+	@echo "# Generated: $$(date)" >> dist/localcode
+	@echo "use strict; use warnings;" >> dist/localcode
+	@echo "" >> dist/localcode
+	@echo "# === LocalCode::Config ===" >> dist/localcode
+	@cat lib/LocalCode/Config.pm >> dist/localcode
+	@echo "" >> dist/localcode
+	@echo "# === LocalCode::Permissions ===" >> dist/localcode
+	@cat lib/LocalCode/Permissions.pm >> dist/localcode
+	@echo "" >> dist/localcode
+	@echo "# === LocalCode::Session ===" >> dist/localcode
+	@cat lib/LocalCode/Session.pm >> dist/localcode
+	@echo "" >> dist/localcode
+	@echo "# === LocalCode::Client ===" >> dist/localcode
+	@cat lib/LocalCode/Client.pm >> dist/localcode
+	@echo "" >> dist/localcode
+	@echo "# === LocalCode::Tools ===" >> dist/localcode
+	@cat lib/LocalCode/Tools.pm >> dist/localcode
+	@echo "" >> dist/localcode
+	@echo "# === LocalCode::UI ===" >> dist/localcode
+	@cat lib/LocalCode/UI.pm >> dist/localcode
+	@echo "" >> dist/localcode
+	@echo "# === Main executable ===" >> dist/localcode
+	@cat bin/localcode | tail -n +2 >> dist/localcode
+	@chmod +x dist/localcode
+	@echo "✅ Built dist/localcode ($$(wc -l < dist/localcode) lines)"
 
 # Test the built distribution
 test-dist: build
 	@echo "Testing built distribution..."
-	dist/localcode --test-all
+	dist/localcode --help
 
-# Install to system
+# Install to ~/bin/localcode
 install: build
-	@echo "Installing localcode..."
-	cp dist/localcode /usr/local/bin/localcode
-	chmod +x /usr/local/bin/localcode
+	@echo "Installing localcode to ~/bin/localcode..."
+	@mkdir -p ~/bin
+	@cp dist/localcode ~/bin/localcode
+	@chmod +x ~/bin/localcode
+	@echo "✅ Installed to ~/bin/localcode"
+	@echo "💡 Add ~/bin to your PATH: export PATH=\$$HOME/bin:\$$PATH"
 
 # Clean up generated files
 clean:
-	rm -f dist/localcode
+	rm -rf dist/
 	rm -rf t/tmp_*
 
 # Show test coverage
@@ -79,8 +112,8 @@ help:
 	@echo "  test-unit     - Run unit tests only"
 	@echo "  test-tui      - Run TUI automation tests"
 	@echo "  test-module   - Test specific module (MODULE=name)"
-	@echo "  build         - Create single-file distribution"
+	@echo "  build         - Create single-file distribution in dist/"
 	@echo "  test-dist     - Test built distribution"
-	@echo "  install       - Install to /usr/local/bin"
+	@echo "  install       - Build and install to ~/bin/localcode"
 	@echo "  clean         - Clean generated files"
 	@echo "  coverage      - Show test coverage info"

@@ -55,7 +55,7 @@ sub get_messages_for_chat {
     
     my @messages = ();
     
-    # Add system message if provided
+    # Add system message if provided (this must always be preserved)
     if ($system_prompt) {
         push @messages, {
             role => 'system',
@@ -75,6 +75,42 @@ sub get_messages_for_chat {
     }
     
     return \@messages;
+}
+
+sub truncate_history_for_context {
+    my ($self, $remove_pairs) = @_;
+    
+    # Default to removing 3 oldest user/assistant pairs (6 messages)
+    $remove_pairs ||= 3;
+    my $remove_messages = $remove_pairs * 2;
+    
+    # Get non-system messages to work with
+    my @non_system_history = grep { $_->{role} ne 'system' } @{$self->{history}};
+    
+    # Only truncate if we have enough messages to remove
+    if (@non_system_history > $remove_messages) {
+        # Remove the oldest messages (keep everything after the first $remove_messages)
+        my @remaining_messages = splice @non_system_history, $remove_messages;
+        
+        # Rebuild history with system messages preserved and remaining conversation
+        my @new_history = ();
+        
+        # Add back any system messages from the original history
+        for my $msg (@{$self->{history}}) {
+            if ($msg->{role} eq 'system') {
+                push @new_history, $msg;
+            }
+        }
+        
+        # Add the remaining non-system messages (oldest removed)
+        push @new_history, @remaining_messages;
+        
+        $self->{history} = \@new_history;
+        
+        return $remove_messages; # Number of messages removed
+    }
+    
+    return 0; # No messages removed
 }
 
 sub save_session {

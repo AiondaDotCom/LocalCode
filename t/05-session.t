@@ -1,7 +1,7 @@
 #!/usr/bin/env perl
 use strict;
 use warnings;
-use Test::More tests => 27;
+use Test::More tests => 30;
 use File::Temp qw(tempdir);
 use lib 'lib';
 
@@ -66,6 +66,30 @@ is(scalar @history, 0, 'Session cleared');
 # Test session deletion
 ok($session->delete_session('test_session'), 'Session deleted');
 ok(!-f $session_file, 'Session file removed');
+
+# Test context length truncation
+$session->new_session('truncate_session');
+for my $i (1..20) {
+    $session->add_message('user', "User message $i");
+    $session->add_message('assistant', "Assistant response $i");
+}
+
+my $removed = $session->truncate_history_for_context(3); # Remove oldest 3 pairs
+is($removed, 6, 'Correct number of messages removed during truncation');
+
+my @truncated_history = $session->get_history();
+my @non_system_truncated = grep { $_->{role} ne 'system' } @truncated_history;
+is(scalar @non_system_truncated, 34, 'Correct number of messages kept after truncation (40-6=34)');
+
+# Test that system messages are preserved during truncation
+$session->add_message('system', 'Tool feedback message');
+$session->add_message('user', 'Another user message');
+$session->add_message('assistant', 'Another assistant response');
+
+$session->truncate_history_for_context(2); # Remove oldest 2 pairs
+my @final_history = $session->get_history();
+my @system_messages = grep { $_->{role} eq 'system' } @final_history;
+ok(scalar @system_messages > 0, 'System messages preserved during truncation');
 
 # Test history size limit
 $session->new_session('limited_session');

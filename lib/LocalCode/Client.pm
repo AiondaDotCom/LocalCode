@@ -204,6 +204,14 @@ sub chat {
         return $data->{message}->{content} if $data && $data->{message} && $data->{message}->{content};
     }
     
+    # Check for context length exceeded error
+    if (!$response->is_success) {
+        my $error_data = eval { JSON->new->decode($response->content) };
+        if ($error_data && $error_data->{error} && $error_data->{error} =~ /context length exceeded/i) {
+            return { error => 'context_length_exceeded', raw_error => $error_data->{error} };
+        }
+    }
+    
     # Handle timeout
     if ($response->code == 500 && $response->message =~ /timeout/i) {
         return "Error: Request timeout after $self->{timeout} seconds";

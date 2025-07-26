@@ -409,16 +409,42 @@ sub interactive_mode {
         # Add current user message to session before sending
         $session->add_message('user', $input);
         
-        # Get full conversation as messages array
-        my $messages = $session->get_messages_for_chat($system_prompt);
+        # Try to send chat with full conversation history
+        my $response;
+        my $retry_count = 0;
+        my $max_retries = 3;
         
-        # Show loading indicator
-        my $stop_loading = $ui->show_loading("🤖 AI thinking");
-        my $response = $client->chat("", undef, $messages);
-        $stop_loading->();
+        while ($retry_count <= $max_retries) {
+            # Get full conversation as messages array
+            my $messages = $session->get_messages_for_chat($system_prompt);
+            
+            # Show loading indicator
+            my $stop_loading = $ui->show_loading("🤖 AI thinking");
+            $response = $client->chat("", undef, $messages);
+            $stop_loading->();
+            
+            # Check if we got a context length error
+            if (ref $response eq 'HASH' && $response->{error} && $response->{error} eq 'context_length_exceeded') {
+                $retry_count++;
+                if ($retry_count <= $max_retries) {
+                    print "⚠️  Context length exceeded, truncating history and retrying ($retry_count/$max_retries)...\n";
+                    my $removed = $session->truncate_history_for_context(3); # Remove oldest 3 pairs
+                    print "   Removed $removed old messages\n";
+                } else {
+                    print "❌ Context still too long after $max_retries retries. Raw error: $response->{raw_error}\n";
+                    $response = "Error: Context length exceeded and could not be resolved by truncating history.";
+                    last;
+                }
+            } else {
+                # Success or other error - break out of retry loop
+                last;
+            }
+        }
         
-        # Add assistant response to session
-        $session->add_message('assistant', $response);
+        # Add assistant response to session (only if it's not an error hash)
+        if (!ref $response) {
+            $session->add_message('assistant', $response);
+        }
         
         # Parse and execute tool calls
         my @tool_calls = $ui->parse_tool_calls($response);

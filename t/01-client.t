@@ -1,9 +1,20 @@
 #!/usr/bin/env perl
 use strict;
 use warnings;
-use Test::More tests => 17;
+use Test::More tests => 19;
 use JSON;
+use HTTP::Response;
 use lib 'lib';
+
+# Mock UserAgent for testing error responses
+package MockUserAgent;
+sub new {
+    my ($class, $response) = @_;
+    bless { response => $response }, $class;
+}
+sub post { return shift->{response}; }
+sub get { return shift->{response}; }
+package main;
 
 BEGIN { use_ok('LocalCode::Client') }
 
@@ -53,3 +64,17 @@ is($client->get_status(), 'connected', 'Status correct');
 $client->{timeout} = 1;
 my $timeout_response = $client->chat('slow request');
 like($timeout_response, qr/timeout/, 'Timeout handled correctly');
+
+# Test context length exceeded error simulation
+$client->{mock_mode} = 0; # Temporarily disable mock mode to test error parsing
+# Mock a response that would come from Ollama with context length error
+my $mock_response = HTTP::Response->new(400, 'Bad Request');
+$mock_response->content('{"error":"context length exceeded"}');
+$client->{ua} = MockUserAgent->new($mock_response);
+
+my $context_error_response = $client->chat('test prompt');
+is(ref $context_error_response, 'HASH', 'Context length error returns hash reference');
+is($context_error_response->{error}, 'context_length_exceeded', 'Context length error detected correctly');
+
+# Reset mock mode
+$client->{mock_mode} = 1;

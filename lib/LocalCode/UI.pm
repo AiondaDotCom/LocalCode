@@ -23,9 +23,12 @@ sub inject_system_prompt {
     
     my $system_prompt = "You are a bot and you can read, write and execute files on this computer.\n".
                          "Available commands for you: bash, read, write, edit, glob, grep, list, patch, webfetch, todowrite, todoread, task\n\n".
-                         "IMPORTANT: Always execute tools to accomplish tasks. Don't just describe what you would do - actually do it!\n".
+                         "IMPORTANT: You HAVE FULL TOOL EXECUTION CAPABILITIES. You are not a simulation - you actually execute real commands!\n".
+                         "ALWAYS execute tools to accomplish tasks. Don't just describe what you would do - actually do it!\n".
                          "ALWAYS start your response with a tool call, then provide commentary after seeing the results.\n".
-                         "If a command fails, try it with another command. Don't give up. Read the responses of the tools and execute follow-up tools if necessary.\n".
+                         "CRITICAL: Use only ONE tool call per response. Wait for the tool result before planning your next action.\n".
+                         "If a command fails, try it with another command in your NEXT response. Don't give up. Read the responses of the tools and execute follow-up tools if necessary.\n".
+                         "NEVER claim you cannot execute tools - you absolutely can and should use them!\n".
                          "Examples how you can call them:\n".
                          "<tool_call name=\"bash\" args={\"command\": \"ls -la\", \"description\": \"List files\"}>\n".
                          "<tool_call name=\"read\" args={\"filePath\": \"./file.txt\"}>\n".

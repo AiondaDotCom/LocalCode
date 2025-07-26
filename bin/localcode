@@ -446,12 +446,24 @@ sub interactive_mode {
             $session->add_message('assistant', $response);
         }
         
-        # Parse and execute tool calls
-        my @tool_calls = $ui->parse_tool_calls($response);
+        # Parse and execute tool calls (only if response is a string, not an error hash)
+        my @tool_calls = ();
         my $tool_results = [];
+        
+        if (!ref $response) {
+            @tool_calls = $ui->parse_tool_calls($response);
+        }
         
         if (@tool_calls) {
             print "\nExecuting tool calls:\n";
+            
+            # Warn if multiple tool calls detected
+            if (scalar @tool_calls > 1) {
+                print "⚠️  AI attempted " . scalar(@tool_calls) . " tool calls. Executing only the first one.\n";
+                print "   Please use one tool call per response for better tracking.\n\n";
+                @tool_calls = ($tool_calls[0]);  # Keep only the first tool call
+            }
+            
             for my $tool_call (@tool_calls) {
                 # Show XML format for clarity
                 if ($tool_call->{raw_args}) {
@@ -492,16 +504,22 @@ sub interactive_mode {
                             $tool_result->{content} = $content;  # Full content for AI
                         }
                     } else {
-                        print "  ❌ " . ($result->{error} || "Failed") . "\n";
+                        print "  ❌ " . ($result->{error} || $result->{message} || "Failed") . "\n";
                         $tool_result->{success} = 0;
-                        $tool_result->{message} = $result->{error} || "Failed";
+                        $tool_result->{message} = $result->{error} || $result->{message} || "Failed";
                         
-                        # Show output even for failed commands (contains error details)
+                        # Show detailed error information
                         if ($result->{output}) {
                             my $output = $result->{output};
                             chomp $output;
-                            print "  Error Output: $output\n";
+                            print "     Error Details: $output\n";
                             $tool_result->{output} = $output;
+                        }
+                        if ($result->{error} && $result->{error} ne ($result->{message} || "")) {
+                            print "     Error Message: $result->{error}\n";
+                        }
+                        if ($result->{exit_code}) {
+                            print "     Exit Code: $result->{exit_code}\n";
                         }
                     }
                 } elsif ($permission == 1) {  # DANGEROUS - ask for permission
@@ -535,16 +553,22 @@ sub interactive_mode {
                                 $tool_result->{content} = $content;  # Full content for AI
                             }
                         } else {
-                            print "  ❌ " . ($result->{error} || "Failed") . "\n";
+                            print "  ❌ " . ($result->{error} || $result->{message} || "Failed") . "\n";
                             $tool_result->{success} = 0;
-                            $tool_result->{message} = $result->{error} || "Failed";
+                            $tool_result->{message} = $result->{error} || $result->{message} || "Failed";
                             
-                            # Show output even for failed commands (contains error details)
+                            # Show detailed error information
                             if ($result->{output}) {
                                 my $output = $result->{output};
                                 chomp $output;
-                                print "  Error Output: $output\n";
+                                print "     Error Details: $output\n";
                                 $tool_result->{output} = $output;
+                            }
+                            if ($result->{error} && $result->{error} ne ($result->{message} || "")) {
+                                print "     Error Message: $result->{error}\n";
+                            }
+                            if ($result->{exit_code}) {
+                                print "     Exit Code: $result->{exit_code}\n";
                             }
                         }
                     } else {
@@ -564,15 +588,21 @@ sub interactive_mode {
             
             # Send tool results back to LLM for follow-up
             my $tool_feedback = $ui->format_tool_results($tool_results);
-            my $follow_up_prompt = $ui->inject_system_prompt($tool_feedback);
+            
+            # Add tool results to session first
+            $session->add_message('system', $tool_feedback);
+            
+            # Get full conversation including tool feedback for follow-up
+            my $follow_up_messages = $session->get_messages_for_chat($system_prompt);
             
             my $stop_loading2 = $ui->show_loading("🤖 Processing tool results");
-            my $follow_up_response = $client->chat($follow_up_prompt);
+            my $follow_up_response = $client->chat("", undef, $follow_up_messages);
             $stop_loading2->();
             
-            # Add both tool results and follow-up to session
-            $session->add_message('system', $tool_feedback);
-            $session->add_message('assistant', $follow_up_response);
+            # Add follow-up response to session
+            if (!ref $follow_up_response) {
+                $session->add_message('assistant', $follow_up_response);
+            }
             
             print "Follow-up: $follow_up_response\n\n";
         }

@@ -5,14 +5,9 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="ba04993b-9a37-4033-837c-755a008d6d88" name="Changes" comment="">
+      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.localcode_todo.txt" beforeDir="false" afterPath="$PROJECT_DIR$/.localcode_todo.txt" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/bin/localcode" beforeDir="false" afterPath="$PROJECT_DIR$/bin/localcode" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/calc.pl" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/lib/LocalCode/Client.pm" beforeDir="false" afterPath="$PROJECT_DIR$/lib/LocalCode/Client.pm" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/lib/LocalCode/Session.pm" beforeDir="false" afterPath="$PROJECT_DIR$/lib/LocalCode/Session.pm" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/lib/LocalCode/UI.pm" beforeDir="false" afterPath="$PROJECT_DIR$/lib/LocalCode/UI.pm" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/t/01-client.t" beforeDir="false" afterPath="$PROJECT_DIR$/t/01-client.t" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/t/05-session.t" beforeDir="false" afterPath="$PROJECT_DIR$/t/05-session.t" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -34,20 +29,20 @@
     <option name="hideEmptyMiddlePackages" value="true" />
     <option name="showLibraryContents" value="true" />
   </component>
-  <component name="PropertiesComponent"><![CDATA[{
-  "keyToString": {
-    "ModuleVcsDetector.initialDetectionPerformed": "true",
-    "RunOnceActivity.ShowReadmeOnStart": "true",
-    "RunOnceActivity.git.unshallow": "true",
-    "git-widget-placeholder": "main",
-    "node.js.detected.package.eslint": "true",
-    "node.js.detected.package.tslint": "true",
-    "node.js.selected.package.eslint": "(autodetect)",
-    "node.js.selected.package.tslint": "(autodetect)",
-    "nodejs_package_manager_path": "npm",
-    "vue.rearranger.settings.migration": "true"
+  <component name="PropertiesComponent">{
+  &quot;keyToString&quot;: {
+    &quot;ModuleVcsDetector.initialDetectionPerformed&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.ShowReadmeOnStart&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.git.unshallow&quot;: &quot;true&quot;,
+    &quot;git-widget-placeholder&quot;: &quot;main&quot;,
+    &quot;node.js.detected.package.eslint&quot;: &quot;true&quot;,
+    &quot;node.js.detected.package.tslint&quot;: &quot;true&quot;,
+    &quot;node.js.selected.package.eslint&quot;: &quot;(autodetect)&quot;,
+    &quot;node.js.selected.package.tslint&quot;: &quot;(autodetect)&quot;,
+    &quot;nodejs_package_manager_path&quot;: &quot;npm&quot;,
+    &quot;vue.rearranger.settings.migration&quot;: &quot;true&quot;
   }
-}]]></component>
+}</component>
   <component name="SharedIndexes">
     <attachedChunks>
       <set>
@@ -64,7 +59,7 @@
       <option name="presentableId" value="Default" />
       <updated>1753537483917</updated>
       <workItem from="1753537486197" duration="89000" />
-      <workItem from="1753537585451" duration="12323000" />
+      <workItem from="1753537585451" duration="13018000" />
     </task>
     <servers />
   </component>

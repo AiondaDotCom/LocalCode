@@ -49,33 +49,7 @@ dist:
 # Build single-file distribution
 build: dist
 	@echo "Building single-file release distribution..."
-	@echo "#!/usr/bin/perl" > dist/localcode
-	@echo "# LocalCode - Single-file release build" >> dist/localcode
-	@echo "# Generated: $$(date)" >> dist/localcode
-	@echo "use strict; use warnings;" >> dist/localcode
-	@echo "" >> dist/localcode
-	@echo "# === LocalCode::Config ===" >> dist/localcode
-	@cat lib/LocalCode/Config.pm >> dist/localcode
-	@echo "" >> dist/localcode
-	@echo "# === LocalCode::Permissions ===" >> dist/localcode
-	@cat lib/LocalCode/Permissions.pm >> dist/localcode
-	@echo "" >> dist/localcode
-	@echo "# === LocalCode::Session ===" >> dist/localcode
-	@cat lib/LocalCode/Session.pm >> dist/localcode
-	@echo "" >> dist/localcode
-	@echo "# === LocalCode::Client ===" >> dist/localcode
-	@cat lib/LocalCode/Client.pm >> dist/localcode
-	@echo "" >> dist/localcode
-	@echo "# === LocalCode::Tools ===" >> dist/localcode
-	@cat lib/LocalCode/Tools.pm >> dist/localcode
-	@echo "" >> dist/localcode
-	@echo "# === LocalCode::UI ===" >> dist/localcode
-	@cat lib/LocalCode/UI.pm >> dist/localcode
-	@echo "" >> dist/localcode
-	@echo "# === Main executable ===" >> dist/localcode
-	@cat bin/localcode | tail -n +2 >> dist/localcode
-	@chmod +x dist/localcode
-	@echo "✅ Built dist/localcode ($$(wc -l < dist/localcode) lines)"
+	@perl build_single_file.pl
 
 # Test the built distribution
 test-dist: build

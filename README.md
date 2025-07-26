@@ -52,7 +52,7 @@ make install
 
 This creates a single-file distribution and installs it to `~/bin/localcode`. Add `~/bin` to your PATH:
 ```bash
-export PATH=$HOME/bin:$PATH
+export PATH=$PATH:$HOME/bin
 ```
 
 4. Ensure Ollama is running:

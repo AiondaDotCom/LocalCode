@@ -63,7 +63,7 @@ install: build
 	@cp dist/localcode ~/bin/localcode
 	@chmod +x ~/bin/localcode
 	@echo "✅ Installed to ~/bin/localcode"
-	@echo "💡 Add ~/bin to your PATH: export PATH=\$$HOME/bin:\$$PATH"
+	@echo "💡 Add ~/bin to your PATH: export PATH=\$$PATH:\$$HOME/bin"
 
 # Clean up generated files
 clean:

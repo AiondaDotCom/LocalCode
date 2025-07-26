@@ -39,7 +39,12 @@ sub inject_system_prompt {
                          "<tool_call name=\"todoread\" args={}>\n".
                          "<tool_call name=\"task\" args={\"command\": \"make test\"}>\n\n";
     
-    return $system_prompt . $user_prompt;
+    return $system_prompt;
+}
+
+sub get_system_prompt {
+    my ($self) = @_;
+    return $self->inject_system_prompt("");
 }
 
 sub _parse_json_args {

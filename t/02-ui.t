@@ -14,7 +14,8 @@ my $prompt = $ui->inject_system_prompt('user prompt');
 like($prompt, qr/You are a bot/, 'System prompt injected');
 like($prompt, qr/tool_call name="read"/, 'Tools listed in prompt');
 like($prompt, qr/bash, read, write/, 'Tool commands indicated');
-like($prompt, qr/user prompt/, 'Original prompt preserved');
+# Note: inject_system_prompt now only returns system prompt, not user prompt
+is($prompt, $ui->get_system_prompt(), 'System prompt consistent');
 
 # Test tool call parsing
 my $response = 'I will <tool_call name="read" args={"filePath": "/tmp/test.txt"}> and then <tool_call name="write" args={"filePath": "/tmp/output.txt", "content": "content"}>';

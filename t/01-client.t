@@ -1,7 +1,7 @@
 #!/usr/bin/env perl
 use strict;
 use warnings;
-use Test::More tests => 15;
+use Test::More tests => 17;
 use JSON;
 use lib 'lib';
 
@@ -31,10 +31,19 @@ is($client->get_current_model(), 'llama2', 'Current model updated');
 ok(!$client->set_model('nonexistent'), 'Invalid model rejected');
 is($client->get_current_model(), 'llama2', 'Current model unchanged');
 
-# Test chat with model parameter
-my $response = $client->chat('test prompt', 'mistral');
+# Test chat with model parameter and messages array
+my $messages = [
+    { role => 'system', content => 'You are a helpful assistant' },
+    { role => 'user', content => 'test prompt' }
+];
+my $response = $client->chat('', 'mistral', $messages);
 ok($response, 'Chat response received');
 like($response, qr/mock response/, 'Mock response format correct');
+
+# Test chat with simple prompt (backward compatibility)
+my $simple_response = $client->chat('test prompt', 'mistral');
+ok($simple_response, 'Simple chat response received');
+like($simple_response, qr/mock response/, 'Simple mock response format correct');
 
 # Test connection status
 ok($client->connect(), 'Connection established');

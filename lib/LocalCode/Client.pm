@@ -173,7 +173,7 @@ sub restore_model {
 }
 
 sub chat {
-    my ($self, $prompt, $model) = @_;
+    my ($self, $prompt, $model, $messages) = @_;
     
     $model ||= $self->{current_model};
     return "Error: No model selected" unless $model;
@@ -186,10 +186,10 @@ sub chat {
         return "mock response from $model: $prompt";
     }
     
-    my $url = "http://$self->{host}:$self->{port}/api/generate";
+    my $url = "http://$self->{host}:$self->{port}/api/chat";
     my $payload = {
         model => $model,
-        prompt => $prompt,
+        messages => $messages || [{ role => 'user', content => $prompt }],
         stream => JSON::false,
     };
     
@@ -201,7 +201,7 @@ sub chat {
     
     if ($response->is_success) {
         my $data = eval { JSON->new->decode($response->content) };
-        return $data->{response} if $data && $data->{response};
+        return $data->{message}->{content} if $data && $data->{message} && $data->{message}->{content};
     }
     
     # Handle timeout

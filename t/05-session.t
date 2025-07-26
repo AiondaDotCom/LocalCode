@@ -1,7 +1,7 @@
 #!/usr/bin/env perl
 use strict;
 use warnings;
-use Test::More tests => 20;
+use Test::More tests => 27;
 use File::Temp qw(tempdir);
 use lib 'lib';
 
@@ -43,6 +43,20 @@ is($loaded_history[1]->{content}, 'Hi there!', 'Loaded content correct');
 my @sessions = $session->list_sessions();
 ok(scalar @sessions >= 1, 'Session in list');
 like($sessions[0], qr/test_session/, 'Session name in list');
+
+# Test get_messages_for_chat method
+my $system_prompt = "You are a helpful assistant";
+my $messages = $session->get_messages_for_chat($system_prompt);
+ok($messages, 'Messages for chat created');
+is(ref $messages, 'ARRAY', 'Messages is array reference');
+is($messages->[0]->{role}, 'system', 'First message is system');
+is($messages->[0]->{content}, $system_prompt, 'System prompt correct');
+is($messages->[1]->{role}, 'user', 'Second message is user');
+is($messages->[2]->{role}, 'assistant', 'Third message is assistant');
+
+# Test without system prompt
+my $messages_no_system = $session->get_messages_for_chat();
+is($messages_no_system->[0]->{role}, 'user', 'First message is user when no system prompt');
 
 # Test session clearing
 $session->clear_session();

@@ -403,16 +403,21 @@ sub interactive_mode {
             next;
         }
         
-        # Regular chat
-        my $full_prompt = $ui->inject_system_prompt($input);
+        # Regular chat with full conversation history
+        my $system_prompt = $ui->get_system_prompt();
+        
+        # Add current user message to session before sending
+        $session->add_message('user', $input);
+        
+        # Get full conversation as messages array
+        my $messages = $session->get_messages_for_chat($system_prompt);
         
         # Show loading indicator
         my $stop_loading = $ui->show_loading("🤖 AI thinking");
-        my $response = $client->chat($full_prompt);
+        my $response = $client->chat("", undef, $messages);
         $stop_loading->();
         
-        # Add to session
-        $session->add_message('user', $input);
+        # Add assistant response to session
         $session->add_message('assistant', $response);
         
         # Parse and execute tool calls

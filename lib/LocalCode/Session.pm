@@ -50,6 +50,33 @@ sub get_history {
     return @{$self->{history}};
 }
 
+sub get_messages_for_chat {
+    my ($self, $system_prompt) = @_;
+    
+    my @messages = ();
+    
+    # Add system message if provided
+    if ($system_prompt) {
+        push @messages, {
+            role => 'system',
+            content => $system_prompt
+        };
+    }
+    
+    # Convert history to Ollama chat format
+    for my $msg (@{$self->{history}}) {
+        # Skip system messages from history (they're for tool feedback)
+        next if $msg->{role} eq 'system';
+        
+        push @messages, {
+            role => $msg->{role},
+            content => $msg->{content}
+        };
+    }
+    
+    return \@messages;
+}
+
 sub save_session {
     my ($self, $session_name) = @_;
     

@@ -15,7 +15,7 @@ my $defaults = $config->load_defaults();
 ok($defaults, 'Default config loaded');
 is($defaults->{ollama}->{host}, 'localhost', 'Default host correct');
 is($defaults->{ollama}->{port}, 11434, 'Default port correct');
-is($defaults->{ollama}->{default_model}, 'llama3:latest', 'Default model correct');
+is($defaults->{ollama}->{default_model}, 'qwen2.5:32b', 'Default model correct');
 
 # Test config file reading
 my ($fh, $test_config) = tempfile();

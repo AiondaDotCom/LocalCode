@@ -42,6 +42,61 @@ sub inject_system_prompt {
     return $system_prompt . $user_prompt;
 }
 
+sub _parse_json_args {
+    my ($self, $args_str) = @_;
+    my %args = ();
+    
+    return %args unless $args_str && $args_str =~ /\S/;
+    
+    # Parse JSON-like arguments with proper quote handling
+    $args_str =~ s/^\s+|\s+$//g;  # Trim whitespace
+    
+    # Split by comma, but be careful about commas inside quoted strings
+    my @pairs = ();
+    my $current = '';
+    my $quote_char = '';
+    my $escape_next = 0;
+    
+    for my $char (split //, $args_str) {
+        if ($escape_next) {
+            $current .= $char;
+            $escape_next = 0;
+        } elsif ($char eq '\\') {
+            $current .= $char;
+            $escape_next = 1;
+        } elsif ($char eq '"' || $char eq "'") {
+            $current .= $char;
+            if ($quote_char eq '') {
+                $quote_char = $char;
+            } elsif ($quote_char eq $char) {
+                $quote_char = '';
+            }
+        } elsif ($char eq ',' && $quote_char eq '') {
+            push @pairs, $current if $current =~ /\S/;
+            $current = '';
+        } else {
+            $current .= $char;
+        }
+    }
+    push @pairs, $current if $current =~ /\S/;
+    
+    # Parse each key: value pair
+    for my $pair (@pairs) {
+        if ($pair =~ /^\s*["']([^"']+)["']\s*:\s*["'](.*)["']\s*$/s) {
+            my ($key, $value) = ($1, $2);
+            # Unescape common escape sequences
+            $value =~ s/\\n/\n/g;
+            $value =~ s/\\t/\t/g;
+            $value =~ s/\\"/"/g;
+            $value =~ s/\\'/'/g;
+            $value =~ s/\\\\/\\/g;
+            $args{$key} = $value;
+        }
+    }
+    
+    return %args;
+}
+
 sub parse_tool_calls {
     my ($self, $response) = @_;
     my @tools = ();
@@ -62,21 +117,7 @@ sub parse_tool_calls {
         $tool_name = lc($tool_name);
         
         # Parse JSON-style arguments
-        my %args = ();
-        
-        # More robust JSON parsing for key-value pairs (handle multiline content)
-        if ($args_str && $args_str =~ /\S/) {
-            # Handle simple key: "value" pairs
-            while ($args_str =~ /"([^"]+)":\s*"([^"]*(?:\\.[^"]*)*)"/gs) {
-                my ($key, $value) = ($1, $2);
-                # Unescape common escape sequences
-                $value =~ s/\\n/\n/g;
-                $value =~ s/\\t/\t/g;
-                $value =~ s/\\"/"/g;
-                $value =~ s/\\\\/\\/g;
-                $args{$key} = $value;
-            }
-        }
+        my %args = $self->_parse_json_args($args_str);
         
         # Convert to array format based on tool type
         my @arg_array = ();
@@ -132,21 +173,7 @@ sub parse_tool_calls {
         $tool_name = lc($tool_name);
         
         # Parse JSON-style arguments
-        my %args = ();
-        
-        # More robust JSON parsing for key-value pairs (handle multiline content)
-        if ($args_str && $args_str =~ /\S/) {
-            # Handle simple key: "value" pairs with better content handling
-            while ($args_str =~ /"([^"]+)":\s*"([^"]*(?:\\.[^"]*)*)"/gs) {
-                my ($key, $value) = ($1, $2);
-                # Unescape common escape sequences
-                $value =~ s/\\n/\n/g;
-                $value =~ s/\\t/\t/g;
-                $value =~ s/\\"/"/g;
-                $value =~ s/\\\\/\\/g;
-                $args{$key} = $value;
-            }
-        }
+        my %args = $self->_parse_json_args($args_str);
         
         # Convert to array format based on tool type
         my @arg_array = ();

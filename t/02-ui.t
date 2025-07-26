@@ -1,7 +1,7 @@
 #!/usr/bin/env perl
 use strict;
 use warnings;
-use Test::More tests => 47;
+use Test::More tests => 62;
 use lib 'lib';
 
 BEGIN { use_ok('LocalCode::UI') }
@@ -111,3 +111,55 @@ my @codeblock_tools = $ui->parse_tool_calls($codeblock_response);
 is(scalar @codeblock_tools, 2, 'Code block tool calls parsed');
 is($codeblock_tools[0]->{name}, 'bash', 'Code block: first tool correct');
 is($codeblock_tools[1]->{name}, 'write', 'Code block: second tool correct');
+
+# Test mixed quotes in tool calls
+my $mixed_quotes_response = '<tool_call name="edit" args={\'filePath\': \'./test.pl\', \'oldString\': "old text", "newString": \'new text\'}>';
+my @mixed_quotes_tools = $ui->parse_tool_calls($mixed_quotes_response);
+is(scalar @mixed_quotes_tools, 1, 'Mixed quotes tool call parsed');
+is($mixed_quotes_tools[0]->{name}, 'edit', 'Mixed quotes: tool name correct');
+is($mixed_quotes_tools[0]->{args}[0], './test.pl', 'Mixed quotes: file path correct');
+
+# Test content with embedded quotes (the real problem)
+my $embedded_quotes_response = '<tool_call name="write" args={"filePath": "./test.pl", "content": "#!/usr/bin/perl\\nuse strict;\\nuse warnings;\\nprint \\"hello world\\";\\n"}>';
+my @embedded_quotes_tools = $ui->parse_tool_calls($embedded_quotes_response);
+is(scalar @embedded_quotes_tools, 1, 'Embedded quotes tool call parsed');
+is($embedded_quotes_tools[0]->{name}, 'write', 'Embedded quotes: tool name correct');
+is($embedded_quotes_tools[0]->{args}[0], './test.pl', 'Embedded quotes: file path correct');
+like($embedded_quotes_tools[0]->{args}[1], qr/perl.*strict.*warnings.*print.*hello world/s, 'Embedded quotes: full content preserved');
+
+# Test content with unescaped quotes (problematic case)
+my $problematic_response = '<tool_call name="write" args={"filePath": "./calc.pl", "content": "#!/usr/bin/perl\\nuse strict;\\nuse warnings;\\nprint \\"Enter first number: \\";\\nmy $num1 = <STDIN>;\\nchomp $num1;\\nprint \\"Sum: \\", $num1 + 2;\\n"}>';
+my @problematic_tools = $ui->parse_tool_calls($problematic_response);
+is(scalar @problematic_tools, 1, 'Problematic quotes tool call parsed');
+is($problematic_tools[0]->{name}, 'write', 'Problematic quotes: tool name correct');
+
+# Test real-world use case: AI creates complex calculator with multiple tool calls
+my $real_world_response = 'I\'ll create a calculator script for you.
+
+<tool_call name="write" args={"filePath": "./calc.pl", "content": "#!/usr/bin/perl\\nuse strict;\\nuse warnings;\\nprint \\"Enter first number: \\";\\nmy $num1 = <STDIN>;\\nchomp($num1);\\nprint \\"Enter second number: \\";\\nmy $num2 = <STDIN>;\\nchomp($num2);\\nprint \\"Choose operation (+, -, *, /): \\";\\nmy $operation = <STDIN>;\\nchomp($operation);\\nmy $result;\\neval {\\n    if ($operation eq \\\'+\\\') { $result = $num1 + $num2; }\\n    elsif ($operation eq \\\'-\\\') { $result = $num1 - $num2; }\\n    elsif ($operation eq \\\'*\\\') { $result = $num1 * $num2; }\\n    elsif ($operation eq \\\'/\\\') {\\n        if ($num2 != 0) { $result = $num1 / $num2; }\\n        else { die \\"Division by zero\\"; }\\n    } else { die \\"Invalid operation\\\\n\\"; }\\n};\\nif ($@) {\\n    print \\"$@\\";\\n} else {\\n    print \\"Result: $result\\\\n\\";\\n}\\n"}>
+
+Now let me make it executable:
+
+<tool_call name="bash" args={"command": "chmod +x calc.pl", "description": "Make the script executable"}>
+
+Let\'s test it:
+
+<tool_call name="bash" args={"command": "./calc.pl", "description": "Run the calculator script"}>';
+
+my @real_world_tools = $ui->parse_tool_calls($real_world_response);
+is(scalar @real_world_tools, 3, 'Real world: three tool calls parsed');
+
+# Find tools by name (order may vary due to parsing strategy)
+my $write_tool = (grep { $_->{name} eq 'write' } @real_world_tools)[0];
+my @bash_tools = grep { $_->{name} eq 'bash' } @real_world_tools;
+
+ok($write_tool, 'Real world: write tool found');
+is(scalar @bash_tools, 2, 'Real world: two bash tools found');
+
+# Check the complex Perl content is preserved correctly
+like($write_tool->{args}[1], qr/perl.*strict.*warnings.*Enter first number.*operation.*eval.*Division by zero/s, 'Real world: complex Perl content preserved');
+
+# Check bash commands
+my @bash_commands = map { $_->{args}[0] } @bash_tools;
+ok((grep { $_ eq 'chmod +x calc.pl' } @bash_commands), 'Real world: chmod command found');
+ok((grep { $_ eq './calc.pl' } @bash_commands), 'Real world: run command found');

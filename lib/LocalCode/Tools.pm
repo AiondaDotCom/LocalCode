@@ -33,6 +33,12 @@ sub _register_default_tools {
     $self->register_tool('grep', 0, \&_tool_search);  # grep = search alias
     $self->register_tool('edit', 1, \&_tool_edit);
     $self->register_tool('list', 0, \&_tool_list);
+    $self->register_tool('glob', 0, \&_tool_glob);
+    $self->register_tool('patch', 1, \&_tool_patch);
+    $self->register_tool('webfetch', 0, \&_tool_webfetch);
+    $self->register_tool('todowrite', 0, \&_tool_todowrite);
+    $self->register_tool('todoread', 0, \&_tool_todoread);
+    $self->register_tool('task', 1, \&_tool_task);
 }
 
 sub register_tool {
@@ -90,8 +96,16 @@ sub execute_tool {
     
     # Skip permission check here - it's done in bin/localcode
     
-    # Validate arguments
-    unless ($args && ref $args eq 'ARRAY' && @$args > 0) {
+    # Validate arguments (allow empty args for some tools like todoread)
+    unless ($args && ref $args eq 'ARRAY') {
+        return {
+            success => 0,
+            error => "Invalid arguments for tool: $name"
+        };
+    }
+    
+    # Some tools don't need arguments
+    if (@$args == 0 && $name ne 'todoread') {
         return {
             success => 0,
             error => "Invalid arguments for tool: $name"
@@ -306,6 +320,133 @@ sub _tool_list {
         success => 1,
         message => "Found " . scalar(@entries) . " entries in $path",
         entries => \@entries
+    };
+}
+
+sub _tool_glob {
+    my ($pattern, $directory) = @_;
+    $directory ||= '.';
+    
+    unless (-d $directory) {
+        return {
+            success => 0,
+            error => "Directory not found: $directory"
+        };
+    }
+    
+    my @matches = glob("$directory/$pattern");
+    
+    return {
+        success => 1,
+        message => "Found " . scalar(@matches) . " matches for pattern '$pattern'",
+        matches => \@matches
+    };
+}
+
+sub _tool_patch {
+    my ($file, $patch_content) = @_;
+    
+    unless (-f $file) {
+        return {
+            success => 0,
+            error => "File not found: $file"
+        };
+    }
+    
+    # Create temporary patch file
+    my $patch_file = "/tmp/localcode_patch_$$.patch";
+    open my $fh, '>', $patch_file or return {
+        success => 0,
+        error => "Cannot create patch file: $!"
+    };
+    print $fh $patch_content;
+    close $fh;
+    
+    # Apply patch
+    my $output = `patch -p0 < $patch_file 2>&1`;
+    my $exit_code = $? >> 8;
+    
+    unlink $patch_file;
+    
+    return {
+        success => $exit_code == 0,
+        message => $exit_code == 0 ? "Patch applied successfully" : "Patch failed",
+        output => $output
+    };
+}
+
+sub _tool_webfetch {
+    my ($url) = @_;
+    
+    # Use curl for web fetching
+    my $output = `curl -s -L "$url" 2>&1`;
+    my $exit_code = $? >> 8;
+    
+    return {
+        success => $exit_code == 0,
+        message => $exit_code == 0 ? "Fetched content from $url" : "Failed to fetch from $url",
+        content => $output
+    };
+}
+
+sub _tool_todowrite {
+    my ($task_description) = @_;
+    
+    my $todo_file = '.localcode_todo.txt';
+    my $timestamp = localtime();
+    
+    open my $fh, '>>', $todo_file or return {
+        success => 0,
+        error => "Cannot write to todo file: $!"
+    };
+    
+    print $fh "[$timestamp] $task_description\n";
+    close $fh;
+    
+    return {
+        success => 1,
+        message => "Added task to todo list: $task_description"
+    };
+}
+
+sub _tool_todoread {
+    my $todo_file = '.localcode_todo.txt';
+    
+    unless (-f $todo_file) {
+        return {
+            success => 1,
+            message => "No todo file found",
+            content => "No tasks yet"
+        };
+    }
+    
+    open my $fh, '<', $todo_file or return {
+        success => 0,
+        error => "Cannot read todo file: $!"
+    };
+    
+    my $content = do { local $/; <$fh> };
+    close $fh;
+    
+    return {
+        success => 1,
+        message => "Read todo list",
+        content => $content || "Todo list is empty"
+    };
+}
+
+sub _tool_task {
+    my ($task_command) = @_;
+    
+    # Execute a complex task (essentially an exec with task context)
+    my $output = `$task_command 2>&1`;
+    my $exit_code = $? >> 8;
+    
+    return {
+        success => $exit_code == 0,
+        message => $exit_code == 0 ? "Task completed successfully" : "Task failed with exit code $exit_code",
+        output => $output,
+        exit_code => $exit_code
     };
 }
 

@@ -14,7 +14,7 @@ sub new {
             file_write => 1,     # DANGEROUS
             shell_exec => 1,     # DANGEROUS
             file_delete => 1,    # DANGEROUS
-            web_fetch => 1,      # DANGEROUS
+            web_fetch => 0,      # SAFE
         },
         remembered_permissions => {},
         remember_choice => 1,
@@ -51,6 +51,9 @@ sub get_permission_for_tool {
         'list' => 'file_read',
         'glob' => 'file_read',
         'patch' => 'file_write',
+        'todowrite' => 'file_write',
+        'todoread' => 'file_read',
+        'task' => 'shell_exec',
     );
     
     my $permission_key = $tool_mapping{$tool_name};

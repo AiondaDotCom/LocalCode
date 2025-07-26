@@ -23,12 +23,21 @@ sub inject_system_prompt {
     
     my $system_prompt = "You are a bot and you can read, write and execute files on this computer.\n".
                          "Available commands for you: bash, read, write, edit, glob, grep, list, patch, webfetch, todowrite, todoread, task\n\n".
+                         "IMPORTANT: Always execute tools to accomplish tasks. Don't just describe what you would do - actually do it!\n".
+                         "ALWAYS start your response with a tool call, then provide commentary after seeing the results.\n".
+                         "If a command fails, try it with another command. Don't give up. Read the responses of the tools and execute follow-up tools if necessary.\n".
                          "Examples how you can call them:\n".
                          "<tool_call name=\"bash\" args={\"command\": \"ls -la\", \"description\": \"List files\"}>\n".
                          "<tool_call name=\"read\" args={\"filePath\": \"./file.txt\"}>\n".
                          "<tool_call name=\"write\" args={\"filePath\": \"./file.txt\", \"content\": \"file content\"}>\n".
                          "<tool_call name=\"edit\" args={\"filePath\": \"./file.txt\", \"oldString\": \"old\", \"newString\": \"new\"}>\n".
-                         "<tool_call name=\"list\" args={\"path\": \"./directory\"}>\n\n";
+                         "<tool_call name=\"list\" args={\"path\": \"./directory\"}>\n".
+                         "<tool_call name=\"glob\" args={\"pattern\": \"*.pl\", \"directory\": \"./lib\"}>\n".
+                         "<tool_call name=\"grep\" args={\"pattern\": \"function\", \"filePath\": \"./script.pl\"}>\n".
+                         "<tool_call name=\"webfetch\" args={\"url\": \"https://example.com\"}>\n".
+                         "<tool_call name=\"todowrite\" args={\"task\": \"Implement feature X\"}>\n".
+                         "<tool_call name=\"todoread\" args={}>\n".
+                         "<tool_call name=\"task\" args={\"command\": \"make test\"}>\n\n";
     
     return $system_prompt . $user_prompt;
 }
@@ -37,12 +46,17 @@ sub parse_tool_calls {
     my ($self, $response) = @_;
     my @tools = ();
     
-    # Parse XML-style tool calls: <tool_call name="bash" args={"command": "ls"}>
-    while ($response =~ /<tool_call\s+name="([^"]+)"\s+args=\{([^}]+)\}>/gi) {
+    # Remove code block markers to expose tool calls inside them
+    my $extracted_response = $response;
+    $extracted_response =~ s/```//g;
+    
+    # Parse XML-style tool calls with various formats
+    # First, try to find complete tool calls
+    while ($extracted_response =~ /<tool_call\s+name="([^"]+)"\s+args=\{([^}]*)\}\s*\/?>/gis) {
         my ($tool_name, $args_str) = ($1, $2);
         
         # Skip if not a valid tool
-        next unless $tool_name =~ /^(bash|read|write|edit|glob|grep|list|patch|webfetch|exec|search)$/i;
+        next unless $tool_name =~ /^(bash|read|write|edit|glob|grep|list|patch|webfetch|todowrite|todoread|task|exec|search)$/i;
         
         # Normalize tool name to lowercase
         $tool_name = lc($tool_name);
@@ -50,9 +64,18 @@ sub parse_tool_calls {
         # Parse JSON-style arguments
         my %args = ();
         
-        # Simple JSON parsing for key-value pairs
-        while ($args_str =~ /"([^"]+)":\s*"([^"]+)"/g) {
-            $args{$1} = $2;
+        # More robust JSON parsing for key-value pairs (handle multiline content)
+        if ($args_str && $args_str =~ /\S/) {
+            # Handle simple key: "value" pairs
+            while ($args_str =~ /"([^"]+)":\s*"([^"]*(?:\\.[^"]*)*)"/gs) {
+                my ($key, $value) = ($1, $2);
+                # Unescape common escape sequences
+                $value =~ s/\\n/\n/g;
+                $value =~ s/\\t/\t/g;
+                $value =~ s/\\"/"/g;
+                $value =~ s/\\\\/\\/g;
+                $args{$key} = $value;
+            }
         }
         
         # Convert to array format based on tool type
@@ -71,8 +94,90 @@ sub parse_tool_calls {
         } elsif ($tool_name eq 'search' || $tool_name eq 'grep') {
             push @arg_array, $args{pattern} if $args{pattern};
             push @arg_array, $args{filePath} || $args{file} if $args{filePath} || $args{file};
+        } elsif ($tool_name eq 'glob') {
+            push @arg_array, $args{pattern} if $args{pattern};
+            push @arg_array, $args{directory} || $args{path} if $args{directory} || $args{path};
+        } elsif ($tool_name eq 'patch') {
+            push @arg_array, $args{filePath} || $args{file} if $args{filePath} || $args{file};
+            push @arg_array, $args{patch} || $args{content} if $args{patch} || $args{content};
         } elsif ($tool_name eq 'webfetch') {
             push @arg_array, $args{url} if $args{url};
+        } elsif ($tool_name eq 'todowrite') {
+            push @arg_array, $args{task} || $args{description} if $args{task} || $args{description};
+        } elsif ($tool_name eq 'todoread') {
+            # No arguments needed for todoread
+        } elsif ($tool_name eq 'task') {
+            push @arg_array, $args{command} if $args{command};
+        }
+        
+        push @tools, {
+            name => $tool_name,
+            args => \@arg_array,
+            raw_args => \%args,
+        };
+    }
+    
+    # Second pass: try to find incomplete tool calls (missing closing >)
+    # This handles cases like: <tool_call name="write" args={"filePath": "test", "content": "data"}>some text
+    while ($extracted_response =~ /<tool_call\s+name="([^"]+)"\s+args=\{(.*?)\}>\s*/gis) {
+        my ($tool_name, $args_str) = ($1, $2);
+        
+        # Skip if we already found this tool call in the first pass
+        next if grep { $_->{name} eq lc($tool_name) } @tools;
+        
+        # Skip if not a valid tool
+        next unless $tool_name =~ /^(bash|read|write|edit|glob|grep|list|patch|webfetch|todowrite|todoread|task|exec|search)$/i;
+        
+        # Normalize tool name to lowercase
+        $tool_name = lc($tool_name);
+        
+        # Parse JSON-style arguments
+        my %args = ();
+        
+        # More robust JSON parsing for key-value pairs (handle multiline content)
+        if ($args_str && $args_str =~ /\S/) {
+            # Handle simple key: "value" pairs with better content handling
+            while ($args_str =~ /"([^"]+)":\s*"([^"]*(?:\\.[^"]*)*)"/gs) {
+                my ($key, $value) = ($1, $2);
+                # Unescape common escape sequences
+                $value =~ s/\\n/\n/g;
+                $value =~ s/\\t/\t/g;
+                $value =~ s/\\"/"/g;
+                $value =~ s/\\\\/\\/g;
+                $args{$key} = $value;
+            }
+        }
+        
+        # Convert to array format based on tool type
+        my @arg_array = ();
+        if ($tool_name eq 'bash' || $tool_name eq 'exec') {
+            push @arg_array, $args{command} if $args{command};
+        } elsif ($tool_name eq 'read' || $tool_name eq 'list') {
+            push @arg_array, $args{filePath} || $args{path} if $args{filePath} || $args{path};
+        } elsif ($tool_name eq 'write') {
+            push @arg_array, $args{filePath} if $args{filePath};
+            push @arg_array, $args{content} if $args{content};
+        } elsif ($tool_name eq 'edit') {
+            push @arg_array, $args{filePath} if $args{filePath};
+            push @arg_array, $args{oldString} if $args{oldString};
+            push @arg_array, $args{newString} if $args{newString};
+        } elsif ($tool_name eq 'search' || $tool_name eq 'grep') {
+            push @arg_array, $args{pattern} if $args{pattern};
+            push @arg_array, $args{filePath} || $args{file} if $args{filePath} || $args{file};
+        } elsif ($tool_name eq 'glob') {
+            push @arg_array, $args{pattern} if $args{pattern};
+            push @arg_array, $args{directory} || $args{path} if $args{directory} || $args{path};
+        } elsif ($tool_name eq 'patch') {
+            push @arg_array, $args{filePath} || $args{file} if $args{filePath} || $args{file};
+            push @arg_array, $args{patch} || $args{content} if $args{patch} || $args{content};
+        } elsif ($tool_name eq 'webfetch') {
+            push @arg_array, $args{url} if $args{url};
+        } elsif ($tool_name eq 'todowrite') {
+            push @arg_array, $args{task} || $args{description} if $args{task} || $args{description};
+        } elsif ($tool_name eq 'todoread') {
+            # No arguments needed for todoread
+        } elsif ($tool_name eq 'task') {
+            push @arg_array, $args{command} if $args{command};
         }
         
         push @tools, {
@@ -85,6 +190,66 @@ sub parse_tool_calls {
     # Note: Old-style function calls removed - only XML format supported now
     
     return @tools;
+}
+
+sub format_tool_results {
+    my ($self, $tool_results) = @_;
+    
+    my $feedback = "Tool execution results:\n";
+    
+    for my $result (@$tool_results) {
+        $feedback .= "- Tool: $result->{tool}\n";
+        $feedback .= "  Status: " . ($result->{success} ? "✅ Success" : "❌ Failed") . "\n";
+        $feedback .= "  Message: $result->{message}\n";
+        
+        if ($result->{output}) {
+            $feedback .= "  Output: $result->{output}\n";
+        }
+        if ($result->{content}) {
+            $feedback .= "  Content: $result->{content}\n";
+        }
+        $feedback .= "\n";
+    }
+    
+    $feedback .= "Please provide a natural response about what you accomplished or any issues encountered.";
+    
+    return $feedback;
+}
+
+sub show_loading {
+    my ($self, $message) = @_;
+    $message ||= "AI thinking";
+    
+    # Show loading message
+    print "$message";
+    STDOUT->flush();
+    
+    # Return a function to stop loading
+    return sub {
+        print "\r" . (" " x (length($message) + 10)) . "\r";  # Clear line
+        STDOUT->flush();
+    };
+}
+
+sub show_spinner {
+    my ($self, $message) = @_;
+    $message ||= "Processing";
+    
+    my @spinner = ('⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏');
+    my $i = 0;
+    
+    # Return a function to update spinner
+    return sub {
+        my $action = shift || 'update';
+        if ($action eq 'stop') {
+            print "\r" . (" " x (length($message) + 10)) . "\r";  # Clear line
+            STDOUT->flush();
+        } else {
+            print "\r$spinner[$i] $message...";
+            STDOUT->flush();
+            $i = ($i + 1) % @spinner;
+        }
+    };
 }
 
 sub handle_slash_commands {

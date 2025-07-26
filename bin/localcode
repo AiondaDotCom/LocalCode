@@ -405,7 +405,11 @@ sub interactive_mode {
         
         # Regular chat
         my $full_prompt = $ui->inject_system_prompt($input);
+        
+        # Show loading indicator
+        my $stop_loading = $ui->show_loading("🤖 AI thinking");
         my $response = $client->chat($full_prompt);
+        $stop_loading->();
         
         # Add to session
         $session->add_message('user', $input);
@@ -413,6 +417,8 @@ sub interactive_mode {
         
         # Parse and execute tool calls
         my @tool_calls = $ui->parse_tool_calls($response);
+        my $tool_results = [];
+        
         if (@tool_calls) {
             print "\nExecuting tool calls:\n";
             for my $tool_call (@tool_calls) {
@@ -426,19 +432,37 @@ sub interactive_mode {
                 
                 # Check permissions and execute
                 my $permission = $permissions->get_permission_for_tool($tool_call->{name});
+                my $tool_result = {
+                    tool => $tool_call->{name},
+                    args => $tool_call->{args},
+                    success => 0,
+                    message => "",
+                };
                 
                 if ($permission == 0) {  # SAFE
                     my $result = $tools->execute_tool($tool_call->{name}, $tool_call->{args});
                     if ($result->{success}) {
                         print "  ✅ " . ($result->{message} || "Success") . "\n";
-                        # Show output for exec/bash commands
+                        $tool_result->{success} = 1;
+                        $tool_result->{message} = $result->{message} || "Success";
+                        
+                        # Show output for exec/bash commands and content for read/webfetch
                         if (($tool_call->{name} eq 'bash' || $tool_call->{name} eq 'exec') && $result->{output}) {
                             my $output = $result->{output};
                             chomp $output;  # Remove trailing newline
                             print "  Output: $output\n";
+                            $tool_result->{output} = $output;
+                        } elsif (($tool_call->{name} eq 'read' || $tool_call->{name} eq 'webfetch') && $result->{content}) {
+                            my $content = $result->{content};
+                            # Show truncated content for display
+                            my $display_content = length($content) > 200 ? substr($content, 0, 200) . "..." : $content;
+                            print "  Content: $display_content\n";
+                            $tool_result->{content} = $content;  # Full content for AI
                         }
                     } else {
                         print "  ❌ " . ($result->{error} || "Failed") . "\n";
+                        $tool_result->{success} = 0;
+                        $tool_result->{message} = $result->{error} || "Failed";
                     }
                 } elsif ($permission == 1) {  # DANGEROUS - ask for permission
                     print "  ⚠️  This is a dangerous operation!\n";
@@ -453,23 +477,55 @@ sub interactive_mode {
                         my $result = $tools->execute_tool($tool_call->{name}, $tool_call->{args});
                         if ($result->{success}) {
                             print "  ✅ " . ($result->{message} || "Success") . "\n";
-                            # Show output for exec/bash commands
+                            $tool_result->{success} = 1;
+                            $tool_result->{message} = $result->{message} || "Success";
+                            
+                            # Show output for exec/bash commands and content for read/webfetch
                             if (($tool_call->{name} eq 'bash' || $tool_call->{name} eq 'exec') && $result->{output}) {
                                 my $output = $result->{output};
                                 chomp $output;  # Remove trailing newline
                                 print "  Output: $output\n";
+                                $tool_result->{output} = $output;
+                            } elsif (($tool_call->{name} eq 'read' || $tool_call->{name} eq 'webfetch') && $result->{content}) {
+                                my $content = $result->{content};
+                                # Show truncated content for display
+                                my $display_content = length($content) > 200 ? substr($content, 0, 200) . "..." : $content;
+                                print "  Content: $display_content\n";
+                                $tool_result->{content} = $content;  # Full content for AI
                             }
                         } else {
                             print "  ❌ " . ($result->{error} || "Failed") . "\n";
+                            $tool_result->{success} = 0;
+                            $tool_result->{message} = $result->{error} || "Failed";
                         }
                     } else {
                         print "  ❌ Operation cancelled\n";
+                        $tool_result->{success} = 0;
+                        $tool_result->{message} = "Operation cancelled by user";
                     }
                 } else {  # BLOCKED
                     print "  🚫 Operation blocked by policy\n";
+                    $tool_result->{success} = 0;
+                    $tool_result->{message} = "Operation blocked by policy";
                 }
+                
+                push @$tool_results, $tool_result;
             }
             print "\n";
+            
+            # Send tool results back to LLM for follow-up
+            my $tool_feedback = $ui->format_tool_results($tool_results);
+            my $follow_up_prompt = $ui->inject_system_prompt($tool_feedback);
+            
+            my $stop_loading2 = $ui->show_loading("🤖 Processing tool results");
+            my $follow_up_response = $client->chat($follow_up_prompt);
+            $stop_loading2->();
+            
+            # Add both tool results and follow-up to session
+            $session->add_message('system', $tool_feedback);
+            $session->add_message('assistant', $follow_up_response);
+            
+            print "Follow-up: $follow_up_response\n\n";
         }
         
         print "\n$response\n\n";

@@ -1,9 +1,9 @@
 ollama:
   host: "localhost"
   port: 11434
-  default_model: "llama3:latest"
+  default_model: "qwen2.5:32b"
   current_model: null  # Auto-detect from available models
-  timeout: 30
+  timeout: 120
 
 ui:
   colors: true

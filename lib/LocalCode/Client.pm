@@ -10,13 +10,13 @@ sub new {
         config => $args{config},
         host => $args{host} || 'localhost',
         port => $args{port} || 11434,
-        timeout => $args{timeout} || 30,
+        timeout => $args{timeout} || 120,
         current_model => undef,
-        default_model => 'llama3:latest',
+        default_model => 'qwen2.5:32b',
         available_models => [],
         mock_mode => 0,
         mock_models => [],
-        ua => LWP::UserAgent->new(timeout => $args{timeout} || 30),
+        ua => LWP::UserAgent->new(timeout => $args{timeout} || 120),
         status => 'disconnected',
     };
     bless $self, $class;

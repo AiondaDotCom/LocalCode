@@ -454,15 +454,24 @@ sub interactive_mode {
                             $tool_result->{output} = $output;
                         } elsif (($tool_call->{name} eq 'read' || $tool_call->{name} eq 'webfetch') && $result->{content}) {
                             my $content = $result->{content};
-                            # Show truncated content for display
-                            my $display_content = length($content) > 200 ? substr($content, 0, 200) . "..." : $content;
-                            print "  Content: $display_content\n";
+                            # Show content length and truncated preview
+                            my $content_length = length($content);
+                            my $display_content = $content_length > 500 ? substr($content, 0, 500) . "..." : $content;
+                            print "  Content ($content_length bytes): $display_content\n";
                             $tool_result->{content} = $content;  # Full content for AI
                         }
                     } else {
                         print "  ❌ " . ($result->{error} || "Failed") . "\n";
                         $tool_result->{success} = 0;
                         $tool_result->{message} = $result->{error} || "Failed";
+                        
+                        # Show output even for failed commands (contains error details)
+                        if ($result->{output}) {
+                            my $output = $result->{output};
+                            chomp $output;
+                            print "  Error Output: $output\n";
+                            $tool_result->{output} = $output;
+                        }
                     }
                 } elsif ($permission == 1) {  # DANGEROUS - ask for permission
                     print "  ⚠️  This is a dangerous operation!\n";
@@ -488,15 +497,24 @@ sub interactive_mode {
                                 $tool_result->{output} = $output;
                             } elsif (($tool_call->{name} eq 'read' || $tool_call->{name} eq 'webfetch') && $result->{content}) {
                                 my $content = $result->{content};
-                                # Show truncated content for display
-                                my $display_content = length($content) > 200 ? substr($content, 0, 200) . "..." : $content;
-                                print "  Content: $display_content\n";
+                                # Show content length and truncated preview
+                                my $content_length = length($content);
+                                my $display_content = $content_length > 500 ? substr($content, 0, 500) . "..." : $content;
+                                print "  Content ($content_length bytes): $display_content\n";
                                 $tool_result->{content} = $content;  # Full content for AI
                             }
                         } else {
                             print "  ❌ " . ($result->{error} || "Failed") . "\n";
                             $tool_result->{success} = 0;
                             $tool_result->{message} = $result->{error} || "Failed";
+                            
+                            # Show output even for failed commands (contains error details)
+                            if ($result->{output}) {
+                                my $output = $result->{output};
+                                chomp $output;
+                                print "  Error Output: $output\n";
+                                $tool_result->{output} = $output;
+                            }
                         }
                     } else {
                         print "  ❌ Operation cancelled\n";

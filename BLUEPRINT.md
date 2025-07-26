@@ -59,16 +59,27 @@ localcode/
 ```perl
 # Key methods:
 - connect()           # Connect to Ollama instance
-- chat($prompt)       # Send chat request
-- list_models()       # Available models
+- chat($prompt, $model)  # Send chat request with optional model
+- list_models()       # Get all available models from Ollama
+- set_model($model)   # Switch current model
+- get_current_model() # Get active model
 - generate($prompt)   # Code generation
 - stream_response()   # Streaming responses
+- validate_model($model) # Check if model exists
 ```
+
+**Model Auto-Detection:**
+- Fetches available models from Ollama on startup
+- Falls back to default_model if current_model unavailable
+- Supports runtime model switching
+- Validates model exists before switching
 
 **CLI Testing Interface:**
 ```bash
 localcode --test-connection
 localcode --list-models
+localcode --set-model llama2
+localcode --current-model
 localcode --chat "Hello test"
 ```
 
@@ -83,6 +94,25 @@ localcode --chat "Hello test"
 - inject_system_prompt() # Inject tool instructions
 - parse_tool_calls()  # Parse LLM tool requests
 - show_permission_dialog() # Permission UI
+- handle_slash_commands() # Process TUI commands
+- show_help()         # Display command help
+```
+
+**TUI Slash Commands:**
+```
+/models               # List available models
+/model <name>         # Switch to model
+/current              # Show current model
+/history              # Show chat history
+/clear                # Clear current session
+/save <name>          # Save session
+/load <name>          # Load session
+/sessions             # List saved sessions
+/tools                # List available tools
+/permissions          # Show permission settings
+/config               # Show current configuration
+/help                 # Show this help
+/exit                 # Exit LocalCode
 ```
 
 **System Prompt Injection:**
@@ -104,6 +134,38 @@ Use: read("/path/file") write("/path/file","content") exec("command") search("te
 localcode --ui-test
 localcode --batch-mode < input.txt
 localcode --test-prompt-injection
+localcode --test-slash-commands    # Test all TUI commands
+localcode --test-tui-batch         # Automated TUI testing
+```
+
+**TUI Example Session:**
+```
+localcode> /models
+Available models:
+- codellama (current)
+- llama2
+- mistral
+
+localcode> /model llama2
+Switched to model: llama2
+
+localcode> /tools
+Available tools:
+- read(file) [SAFE]
+- write(file,content) [DANGEROUS]
+- exec(cmd) [DANGEROUS]
+- search(pattern,file) [SAFE]
+
+localcode> write hello world script
+[PERMISSION REQUIRED] write("/tmp/hello.pl", "print 'Hello World!\n';")
+Allow? [y/N/a=always]: y
+[APPROVED] File written successfully.
+
+localcode> /save hello_session
+Session saved as: hello_session
+
+localcode> /exit
+Goodbye!
 ```
 
 ### 3. Tool System (`lib/LocalCode/Tools.pm`)
@@ -250,7 +312,31 @@ t/
 ├── 03-tools.t       # Tool system tests
 ├── 04-config.t      # Configuration tests
 ├── 05-session.t     # Session management tests
+├── 06-tui-commands.t # TUI slash command tests
+├── 07-model-mgmt.t  # Model management tests
 └── 99-integration.t # End-to-end tests
+```
+
+### TUI Automated Testing (`t/06-tui-commands.t`)
+
+```perl
+# Tests all TUI slash commands automatically:
+test_slash_command("/models", qr/Available models:/);
+test_slash_command("/current", qr/Current model:/);
+test_slash_command("/tools", qr/Available tools:/);
+test_slash_command("/help", qr/Available commands:/);
+test_slash_command("/config", qr/Configuration:/);
+test_slash_command("/sessions", qr/Saved sessions:/);
+
+# Test model switching:
+test_model_switch("llama2", "codellama");
+
+# Test session management:
+test_session_save_load("test_session");
+
+# Test permission dialogs:
+test_permission_flow("write", "auto_yes");
+test_permission_flow("exec", "auto_no");
 ```
 
 ### Test Requirements
@@ -267,7 +353,37 @@ localcode --self-test              # Run all tests
 localcode --test-module Client     # Test specific module
 localcode --validate-tools         # Check tool definitions
 localcode --health-check          # System health
+
+# TUI testing with input automation:
+echo "/models\n/current\n/tools\n/help\n/exit" | localcode --test-tui-stdin
+localcode --test-tui-script test_commands.txt
 ```
+
+### TUI Test Input Files
+
+**test_commands.txt:**
+```
+/models
+/current  
+/tools
+/permissions
+/config
+/help
+/save test_session
+/sessions
+/load test_session
+/clear
+/exit
+```
+
+**Expected outputs validated automatically:**
+- `/models` → "Available models:" + model list
+- `/current` → "Current model: [model_name]"
+- `/tools` → Tool list with [SAFE]/[DANGEROUS] markers
+- `/permissions` → Permission settings display
+- `/save` → "Session saved:" confirmation
+- `/sessions` → List of saved sessions
+- Error handling for invalid commands
 
 ## Implementation Phases
 
@@ -305,6 +421,14 @@ localcode "Generate hello world"  # Direct prompt
 localcode --file script.pl        # Process file
 ```
 
+### Model Management
+```bash
+localcode --list-models           # Show all available Ollama models
+localcode --set-model llama2      # Switch to different model
+localcode --current-model         # Show current active model
+localcode --model codellama "help me code"  # Use specific model for this request
+```
+
 ### Testing Commands (for LLM autonomous testing)
 ```bash
 localcode --test-all              # Complete test suite
@@ -318,6 +442,11 @@ localcode --auto-yes <prompt>     # Auto-approve all permissions
 localcode --auto-no <prompt>      # Auto-deny all permissions  
 localcode --simulate <prompt>     # Dry-run mode (no actual execution)
 localcode --test-mode <prompt>    # Special testing mode with mock execution
+
+# TUI automation testing:
+localcode --test-tui-batch        # Run all TUI command tests
+localcode --test-tui-input "commands.txt"  # Test TUI with input file
+echo "/models\n/current\n/help\n/exit" | localcode --test-mode
 ```
 
 ### Session Commands

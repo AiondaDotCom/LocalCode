@@ -1,0 +1,13 @@
+/models
+/current
+/tools
+/permissions
+/config
+/help
+/save test_session
+/sessions
+/load test_session
+/clear
+/model llama2
+/current
+/exit

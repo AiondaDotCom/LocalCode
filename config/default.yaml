@@ -1,0 +1,30 @@
+ollama:
+  host: "localhost"
+  port: 11434
+  default_model: "codellama"
+  current_model: null  # Auto-detect from available models
+  timeout: 30
+
+ui:
+  colors: true
+  streaming: true
+  history_size: 100
+  prompt_injection: true
+  slash_commands: true
+  prompt_prefix: "localcode> "
+
+tools:
+  enabled: ["file_read", "file_write", "shell_exec", "grep_search"]
+  timeout: 60
+
+permissions:
+  safe_auto_allow: ["file_read", "grep_search"]
+  dangerous_confirm: ["file_write", "shell_exec", "file_delete"]
+  blocked: []
+  remember_choice: true
+  
+testing:
+  auto_approve: false
+  auto_deny: false
+  simulate_only: false
+  mock_execution: false

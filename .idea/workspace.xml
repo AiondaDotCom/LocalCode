@@ -5,11 +5,11 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="ba04993b-9a37-4033-837c-755a008d6d88" name="Changes" comment="">
-      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/.localcode_todo.txt" beforeDir="false" afterPath="$PROJECT_DIR$/.localcode_todo.txt" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.localcode_todo.txt" beforeDir="false" />
       <change beforePath="$PROJECT_DIR$/bin/localcode" beforeDir="false" afterPath="$PROJECT_DIR$/bin/localcode" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/calc.pl" beforeDir="false" afterPath="$PROJECT_DIR$/calc.pl" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/calc.pl" beforeDir="false" />
       <change beforePath="$PROJECT_DIR$/lib/LocalCode/Client.pm" beforeDir="false" afterPath="$PROJECT_DIR$/lib/LocalCode/Client.pm" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/lib/LocalCode/UI.pm" beforeDir="false" afterPath="$PROJECT_DIR$/lib/LocalCode/UI.pm" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -61,7 +61,7 @@
       <option name="presentableId" value="Default" />
       <updated>1753537483917</updated>
       <workItem from="1753537486197" duration="89000" />
-      <workItem from="1753537585451" duration="14129000" />
+      <workItem from="1753537585451" duration="14590000" />
     </task>
     <servers />
   </component>

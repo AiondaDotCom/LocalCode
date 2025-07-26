@@ -203,12 +203,13 @@ sub chat {
         my $data = eval { JSON->new->decode($response->content) };
         if ($data) {
             # Handle different Ollama response formats
-            if ($data->{message} && $data->{message}->{content}) {
+            if ($data->{message} && exists $data->{message}->{content}) {
+                # Return content even if it's empty (defined but empty string)
                 return $data->{message}->{content};
             } elsif ($data->{response}) {
                 # Fallback to old /api/generate format
                 return $data->{response};
-            } elsif ($data->{content}) {
+            } elsif (exists $data->{content}) {
                 # Another possible format
                 return $data->{content};
             } else {

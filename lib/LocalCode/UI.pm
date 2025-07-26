@@ -26,7 +26,8 @@ sub inject_system_prompt {
                          "IMPORTANT: You HAVE FULL TOOL EXECUTION CAPABILITIES. You are not a simulation - you actually execute real commands!\n".
                          "ALWAYS execute tools to accomplish tasks. Don't just describe what you would do - actually do it!\n".
                          "ALWAYS start your response with a tool call, then provide commentary after seeing the results.\n".
-                         "CRITICAL: Use only ONE tool call per response. Wait for the tool result before planning your next action.\n".
+                         "You can use multiple tool calls in one response if needed for a complete task.\n".
+                         "LOGIC: Always create files BEFORE trying to execute them. Use 'write' before 'bash' commands.\n".
                          "If a command fails, try it with another command in your NEXT response. Don't give up. Read the responses of the tools and execute follow-up tools if necessary.\n".
                          "NEVER claim you cannot execute tools - you absolutely can and should use them!\n".
                          "Examples how you can call them:\n".

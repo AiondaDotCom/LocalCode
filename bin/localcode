@@ -463,11 +463,9 @@ sub interactive_mode {
         if (@tool_calls) {
             print "\nExecuting tool calls:\n";
             
-            # Warn if multiple tool calls detected
+            # Show how many tool calls we're executing
             if (scalar @tool_calls > 1) {
-                print "⚠️  AI attempted " . scalar(@tool_calls) . " tool calls. Executing only the first one.\n";
-                print "   Please use one tool call per response for better tracking.\n\n";
-                @tool_calls = ($tool_calls[0]);  # Keep only the first tool call
+                print "🔧 Executing " . scalar(@tool_calls) . " tool calls in sequence...\n\n";
             }
             
             for my $tool_call (@tool_calls) {
@@ -616,9 +614,10 @@ sub interactive_mode {
                 print "⚠️  Follow-up response was empty or invalid.\n";
                 print "   Tool execution was successful, continuing without follow-up.\n\n";
             }
+        } else {
+            # No tool calls, show the AI response directly
+            print "\n$response\n\n";
         }
-        
-        print "\n$response\n\n";
     }
     
     # Only print goodbye if we didn't exit via /exit command

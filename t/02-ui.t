@@ -11,13 +11,13 @@ ok($ui, 'UI object created');
 
 # Test system prompt injection
 my $prompt = $ui->inject_system_prompt('user prompt');
-like($prompt, qr/Tools:/, 'System prompt injected');
-like($prompt, qr/read\(file\)/, 'Tools listed in prompt');
-like($prompt, qr/Safe: read,search/, 'Safe tools indicated');
+like($prompt, qr/You are a bot/, 'System prompt injected');
+like($prompt, qr/tool_call name="read"/, 'Tools listed in prompt');
+like($prompt, qr/bash, read, write/, 'Tool commands indicated');
 like($prompt, qr/user prompt/, 'Original prompt preserved');
 
 # Test tool call parsing
-my $response = 'I will read("/tmp/test.txt") and then write("/tmp/output.txt","content")';
+my $response = 'I will <tool_call name="read" args={"filePath": "/tmp/test.txt"}> and then <tool_call name="write" args={"filePath": "/tmp/output.txt", "content": "content"}>';
 my @tools = $ui->parse_tool_calls($response);
 is(scalar @tools, 2, 'Two tool calls parsed');
 is($tools[0]->{name}, 'read', 'First tool name correct');

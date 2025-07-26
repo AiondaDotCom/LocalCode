@@ -11,7 +11,7 @@ ok($client, 'Client created');
 
 # Setup mock environment
 $client->{mock_mode} = 1;
-$client->{mock_models} = ['codellama', 'llama2', 'mistral', 'phi'];
+$client->{mock_models} = ['llama3', 'llama2', 'mistral', 'phi'];
 
 # Test initial model detection
 $client->detect_available_models();
@@ -19,12 +19,12 @@ my @models = $client->list_models();
 is(scalar @models, 4, 'All mock models detected');
 
 # Test default model fallback
-ok($client->set_default_model('codellama'), 'Default model set');
-is($client->get_default_model(), 'codellama', 'Default model stored');
+ok($client->set_default_model('llama3'), 'Default model set');
+is($client->get_default_model(), 'llama3', 'Default model stored');
 
 # Test current model initialization
 ok($client->initialize_current_model(), 'Current model initialized');
-is($client->get_current_model(), 'codellama', 'Current model set to default');
+is($client->get_current_model(), 'llama3', 'Current model set to default');
 
 # Test model switching
 ok($client->set_model('llama2'), 'Model switch to llama2');
@@ -48,8 +48,8 @@ ok(!$client->is_model_available('chatgpt'), 'Unavailable model check false');
 # Test model fallback scenario
 $client->{mock_models} = ['llama2']; # Remove current model from available
 $client->detect_available_models();
-ok($client->set_model('mistral'), 'Fallback triggered for unavailable model');
-is($client->get_current_model(), 'codellama', 'Fallback to default model');
+ok(!$client->set_model('mistral'), 'Invalid model rejected');
+is($client->get_current_model(), 'mistral', 'Current model unchanged after invalid');
 
 # Test model with chat context
 $client->set_model('llama2');

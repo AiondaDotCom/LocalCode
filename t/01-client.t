@@ -12,24 +12,24 @@ ok($client, 'Client object created');
 
 # Test connection without real Ollama (mock mode)
 $client->{mock_mode} = 1;
-$client->{mock_models} = ['codellama', 'llama2', 'mistral'];
+$client->{mock_models} = ['llama3', 'llama2', 'mistral'];
 
 # Test list_models
 my @models = $client->list_models();
 is(scalar @models, 3, 'Mock models returned');
-is($models[0], 'codellama', 'First model correct');
+is($models[0], 'llama2', 'First model correct (alphabetically sorted)');
 
 # Test model validation
-ok($client->validate_model('codellama'), 'Valid model accepted');
+ok($client->validate_model('llama3'), 'Valid model accepted');
 ok(!$client->validate_model('nonexistent'), 'Invalid model rejected');
 
 # Test set_model
 ok($client->set_model('llama2'), 'Model switch successful');
 is($client->get_current_model(), 'llama2', 'Current model updated');
 
-# Test fallback to default
-ok($client->set_model('nonexistent'), 'Fallback to default works');
-is($client->get_current_model(), 'codellama', 'Fallback model correct');
+# Test invalid model handling  
+ok(!$client->set_model('nonexistent'), 'Invalid model rejected');
+is($client->get_current_model(), 'llama2', 'Current model unchanged');
 
 # Test chat with model parameter
 my $response = $client->chat('test prompt', 'mistral');

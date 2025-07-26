@@ -1,7 +1,7 @@
 #!/usr/bin/env perl
 use strict;
 use warnings;
-use Test::More tests => 35;
+use Test::More tests => 40;
 use File::Temp qw(tempdir);
 use lib 'lib';
 
@@ -19,23 +19,23 @@ my $session = LocalCode::Session->new(session_dir => $temp_dir);
 # Set up mock mode
 $ui->{test_mode} = 1;
 $client->{mock_mode} = 1;
-$client->{mock_models} = ['codellama', 'llama2', 'mistral'];
-$client->set_model('codellama');
+$client->{mock_models} = ['llama3', 'llama2', 'mistral'];
+$client->set_model('llama3');
 
 # Test /models command
 my $output = $ui->handle_slash_command('/models', $client);
 ok($output, '/models command executed');
 like($output, qr/Available models:/, '/models output format');
-like($output, qr/codellama/, '/models includes codellama');
+like($output, qr/llama3/, '/models includes llama3');
 like($output, qr/llama2/, '/models includes llama2');
 like($output, qr/\(current\)/, '/models shows current model');
 
 # Test /current command
 $output = $ui->handle_slash_command('/current', $client);
 ok($output, '/current command executed');
-like($output, qr/Current model: codellama/, '/current shows model');
+like($output, qr/Current model: llama3/, '/current shows model');
 
-# Test /model switch command
+# Test /model switch command  
 $output = $ui->handle_slash_command('/model llama2', $client);
 ok($output, '/model switch executed');
 like($output, qr/Switched to model: llama2/, '/model switch confirmation');

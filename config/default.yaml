@@ -1,7 +1,7 @@
 ollama:
   host: "localhost"
   port: 11434
-  default_model: "codellama"
+  default_model: "llama3:latest"
   current_model: null  # Auto-detect from available models
   timeout: 30
 

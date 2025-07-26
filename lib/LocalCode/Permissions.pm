@@ -14,6 +14,7 @@ sub new {
             file_write => 1,     # DANGEROUS
             shell_exec => 1,     # DANGEROUS
             file_delete => 1,    # DANGEROUS
+            web_fetch => 1,      # DANGEROUS
         },
         remembered_permissions => {},
         remember_choice => 1,
@@ -32,6 +33,30 @@ sub BLOCKED { 2 }
 sub get_permission {
     my ($self, $tool) = @_;
     return $self->{permissions}->{$tool} // 2; # BLOCKED
+}
+
+sub get_permission_for_tool {
+    my ($self, $tool_name) = @_;
+    
+    # Map tool names to permission keys
+    my %tool_mapping = (
+        'read' => 'file_read',
+        'write' => 'file_write', 
+        'exec' => 'shell_exec',
+        'bash' => 'shell_exec',
+        'search' => 'grep_search',
+        'grep' => 'grep_search',
+        'webfetch' => 'web_fetch',
+        'edit' => 'file_write',
+        'list' => 'file_read',
+        'glob' => 'file_read',
+        'patch' => 'file_write',
+    );
+    
+    my $permission_key = $tool_mapping{$tool_name};
+    return 2 unless $permission_key; # BLOCKED if unknown tool
+    
+    return $self->get_permission($permission_key);
 }
 
 sub set_permission {

@@ -12,7 +12,7 @@ sub new {
         port => $args{port} || 11434,
         timeout => $args{timeout} || 30,
         current_model => undef,
-        default_model => 'codellama',
+        default_model => 'llama3:latest',
         available_models => [],
         mock_mode => 0,
         mock_models => [],
@@ -92,7 +92,8 @@ sub list_models {
         $self->detect_available_models();
     }
     
-    return @{$self->{available_models}};
+    # Return alphabetically sorted models
+    return sort @{$self->{available_models}};
 }
 
 sub validate_model {
@@ -157,12 +158,7 @@ sub set_model {
         return 1;
     }
     
-    # Fallback to default if invalid model
-    if ($self->validate_model($self->{default_model})) {
-        $self->{current_model} = $self->{default_model};
-        return 1;
-    }
-    
+    # For invalid models, don't fallback - just return false
     return 0;
 }
 

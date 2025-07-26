@@ -28,7 +28,11 @@ sub _register_default_tools {
     $self->register_tool('read', 0, \&_tool_read);
     $self->register_tool('write', 1, \&_tool_write);
     $self->register_tool('exec', 1, \&_tool_exec);
+    $self->register_tool('bash', 1, \&_tool_exec);  # bash = exec alias
     $self->register_tool('search', 0, \&_tool_search);
+    $self->register_tool('grep', 0, \&_tool_search);  # grep = search alias
+    $self->register_tool('edit', 1, \&_tool_edit);
+    $self->register_tool('list', 0, \&_tool_list);
 }
 
 sub register_tool {
@@ -84,13 +88,7 @@ sub execute_tool {
         };
     }
     
-    # Check permission (skip for mock/simulate modes)
-    unless ($self->{mock_execution} || $self->{simulate_only} || $self->request_permission($name, $args)) {
-        return {
-            success => 0,
-            error => "Permission denied for tool: $name"
-        };
-    }
+    # Skip permission check here - it's done in bin/localcode
     
     # Validate arguments
     unless ($args && ref $args eq 'ARRAY' && @$args > 0) {
@@ -138,6 +136,12 @@ sub execute_tool {
         };
     }
     
+    # If result is already a proper hash with success/error, return it directly
+    if (ref $result eq 'HASH' && (exists $result->{success} || exists $result->{error})) {
+        return $result;
+    }
+    
+    # Otherwise wrap simple results
     return {
         success => 1,
         output => $result
@@ -147,22 +151,162 @@ sub execute_tool {
 # Tool implementations
 sub _tool_read {
     my ($file) = @_;
-    return "mock read: $file";
+    
+    unless (-f $file) {
+        return {
+            success => 0,
+            error => "File not found: $file"
+        };
+    }
+    
+    open my $fh, '<', $file or return {
+        success => 0,
+        error => "Cannot read file: $!"
+    };
+    
+    my $content = do { local $/; <$fh> };
+    close $fh;
+    
+    return {
+        success => 1,
+        message => "Read " . length($content) . " bytes from $file",
+        content => $content
+    };
 }
 
 sub _tool_write {
     my ($file, $content) = @_;
-    return "mock write: $file -> $content";
+    
+    open my $fh, '>', $file or return {
+        success => 0,
+        error => "Cannot write file: $!"
+    };
+    
+    # Add newline at end if content doesn't already end with one
+    $content .= "\n" unless $content =~ /\n$/;
+    
+    print $fh $content;
+    close $fh;
+    
+    return {
+        success => 1,
+        message => "Wrote " . length($content) . " bytes to $file"
+    };
 }
 
 sub _tool_exec {
     my ($command) = @_;
-    return "mock exec: $command";
+    
+    my $output = `$command 2>&1`;
+    my $exit_code = $? >> 8;
+    
+    return {
+        success => $exit_code == 0,
+        message => $exit_code == 0 ? "Command executed successfully" : "Command failed with exit code $exit_code",
+        output => $output,
+        exit_code => $exit_code
+    };
 }
 
 sub _tool_search {
     my ($pattern, $file) = @_;
-    return "mock search: $pattern in $file";
+    
+    unless (-f $file) {
+        return {
+            success => 0,
+            error => "File not found: $file"
+        };
+    }
+    
+    open my $fh, '<', $file or return {
+        success => 0,
+        error => "Cannot read file: $!"
+    };
+    
+    my @matches = ();
+    my $line_num = 0;
+    
+    while (my $line = <$fh>) {
+        $line_num++;
+        if ($line =~ /$pattern/) {
+            push @matches, "$line_num: $line";
+        }
+    }
+    close $fh;
+    
+    return {
+        success => 1,
+        message => "Found " . scalar(@matches) . " matches in $file",
+        matches => \@matches
+    };
+}
+
+sub _tool_edit {
+    my ($file, $old_string, $new_string) = @_;
+    
+    unless (-f $file) {
+        return {
+            success => 0,
+            error => "File not found: $file"
+        };
+    }
+    
+    # Read file
+    open my $fh, '<', $file or return {
+        success => 0,
+        error => "Cannot read file: $!"
+    };
+    my $content = do { local $/; <$fh> };
+    close $fh;
+    
+    # Count occurrences for verification
+    my $count = () = $content =~ /\Q$old_string\E/g;
+    if ($count == 0) {
+        return {
+            success => 0,
+            error => "String not found in file: '$old_string'"
+        };
+    }
+    
+    # Replace and write back
+    $content =~ s/\Q$old_string\E/$new_string/g;
+    
+    open $fh, '>', $file or return {
+        success => 0,
+        error => "Cannot write file: $!"
+    };
+    print $fh $content;
+    close $fh;
+    
+    return {
+        success => 1,
+        message => "Replaced $count occurrence(s) in $file"
+    };
+}
+
+sub _tool_list {
+    my ($path) = @_;
+    
+    unless (-d $path) {
+        return {
+            success => 0,
+            error => "Directory not found: $path"
+        };
+    }
+    
+    opendir my $dh, $path or return {
+        success => 0,
+        error => "Cannot read directory: $!"
+    };
+    
+    my @entries = sort grep { $_ ne '.' && $_ ne '..' } readdir $dh;
+    closedir $dh;
+    
+    return {
+        success => 1,
+        message => "Found " . scalar(@entries) . " entries in $path",
+        entries => \@entries
+    };
 }
 
 1;

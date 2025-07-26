@@ -1,0 +1,480 @@
+#!/usr/bin/env perl
+use strict;
+use warnings;
+use lib 'lib';
+use Getopt::Long;
+use LocalCode::Config;
+use LocalCode::Client;
+use LocalCode::UI;
+use LocalCode::Tools;
+use LocalCode::Permissions;
+use LocalCode::Session;
+
+# Parse command line options
+my %opts;
+GetOptions(
+    \%opts,
+    'help|h',
+    'test-all',
+    'test-connection',
+    'list-models',
+    'set-model=s',
+    'current-model',
+    'auto-yes',
+    'auto-no',
+    'simulate',
+    'test-mode',
+    'test-tui-stdin',
+    'test-tui-script=s',
+    'self-test',
+    'config-test',
+    'validate-tools',
+    'health-check',
+);
+
+# Show help
+if ($opts{help}) {
+    print_help();
+    exit 0;
+}
+
+# Initialize components
+my $config = LocalCode::Config->new();
+my $client = LocalCode::Client->new(config => $config);
+my $permissions = LocalCode::Permissions->new(config => $config);
+my $tools = LocalCode::Tools->new(config => $config, permissions => $permissions);
+my $session = LocalCode::Session->new(config => $config);
+my $ui = LocalCode::UI->new(
+    config => $config,
+    client => $client,
+    tools => $tools,
+    permissions => $permissions,
+    session => $session,
+);
+
+# Set testing modes based on options
+if ($opts{'auto-yes'}) {
+    $config->set_testing_mode('auto_yes');
+    $permissions->set_testing_mode('auto_yes');
+    $tools->{auto_approve} = 1;
+    $ui->{auto_approve} = 1;
+}
+
+if ($opts{'auto-no'}) {
+    $config->set_testing_mode('auto_no');
+    $permissions->set_testing_mode('auto_no');
+    $tools->{auto_approve} = 0;
+    $ui->{auto_approve} = 0;
+}
+
+if ($opts{simulate}) {
+    $config->set_testing_mode('simulate');
+    $tools->{simulate_only} = 1;
+}
+
+if ($opts{'test-mode'}) {
+    $config->set_testing_mode('mock');
+    $client->{mock_mode} = 1;
+    $client->{mock_models} = ['llama3', 'llama2', 'mistral'];
+    $client->set_model('llama3');  # Set default model for test mode
+    $tools->{mock_execution} = 1;
+    $ui->{test_mode} = 1;
+}
+
+# Handle specific commands
+if ($opts{'test-connection'}) {
+    test_connection($client);
+} elsif ($opts{'list-models'}) {
+    list_models($client);
+} elsif ($opts{'set-model'}) {
+    set_model($client, $opts{'set-model'});
+} elsif ($opts{'current-model'}) {
+    current_model($client);
+} elsif ($opts{'test-all'}) {
+    run_all_tests();
+} elsif ($opts{'self-test'}) {
+    run_self_test($ui, $client, $tools, $permissions);
+} elsif ($opts{'config-test'}) {
+    test_config($config);
+} elsif ($opts{'validate-tools'}) {
+    validate_tools($tools);
+} elsif ($opts{'health-check'}) {
+    health_check($client, $config);
+} elsif ($opts{'test-tui-stdin'}) {
+    test_tui_stdin($ui);
+} elsif ($opts{'test-tui-script'}) {
+    test_tui_script($ui, $opts{'test-tui-script'});
+} elsif (@ARGV) {
+    # Direct prompt mode
+    my $prompt = join(' ', @ARGV);
+    direct_prompt($ui, $client, $prompt);
+} else {
+    # Interactive TUI mode
+    interactive_mode($ui, $client, $session);
+}
+
+# Command implementations
+sub print_help {
+    print "LocalCode - Perl-based AI Coding Agent for Ollama\n\n";
+    print "Usage: localcode [OPTIONS] [PROMPT]\n\n";
+    print "Options:\n";
+    print "  --help                Show this help\n";
+    print "  --list-models         List available Ollama models\n";
+    print "  --set-model MODEL     Switch to specific model\n";
+    print "  --current-model       Show current model\n";
+    print "  --test-connection     Test Ollama connection\n";
+    print "  --auto-yes            Auto-approve all permissions\n";
+    print "  --auto-no             Auto-deny all permissions\n";
+    print "  --simulate            Simulate tool execution\n";
+    print "  --test-mode           Mock mode for testing\n";
+    print "  --self-test           Run comprehensive self-tests\n";
+    print "  --config-test         Test configuration\n";
+    print "  --validate-tools      Validate tool definitions\n";
+    print "  --health-check        System health check\n";
+    print "  --test-tui-stdin      Test TUI with stdin input\n";
+    print "  --test-tui-script FILE Test TUI with script file\n\n";
+    print "Interactive Commands:\n";
+    print "  /help                 Show TUI help\n";
+    print "  /models               List models\n";
+    print "  /model NAME           Switch model\n";
+    print "  /exit                 Exit program\n\n";
+    print "Examples:\n";
+    print "  localcode                           # Interactive mode\n";
+    print "  localcode \"write hello world\"       # Direct prompt\n";
+    print "  localcode --auto-yes \"create script\" # Auto-approve mode\n";
+    print "  localcode --simulate \"dangerous cmd\" # Simulation mode\n";
+}
+
+sub test_connection {
+    my ($client) = @_;
+    
+    if ($client->connect()) {
+        print "✓ Connection to Ollama successful\n";
+        print "Status: " . $client->get_status() . "\n";
+        my @models = $client->list_models();
+        print "Available models: " . scalar(@models) . "\n";
+        exit 0;
+    } else {
+        print "✗ Failed to connect to Ollama\n";
+        print "Check if Ollama is running on localhost:11434\n";
+        exit 1;
+    }
+}
+
+sub list_models {
+    my ($client) = @_;
+    
+    $client->connect() unless $client->{mock_mode};
+    my @models = $client->list_models();
+    my $current = $client->get_current_model();
+    
+    print "Available models:\n";
+    for my $model (@models) {
+        print "- $model";
+        print " (current)" if $current && $model eq $current;
+        print "\n";
+    }
+}
+
+sub set_model {
+    my ($client, $model) = @_;
+    
+    $client->connect() unless $client->{mock_mode};
+    if ($client->set_model($model)) {
+        print "✓ Switched to model: $model\n";
+    } else {
+        print "✗ Model '$model' not found or unavailable\n";
+        exit 1;
+    }
+}
+
+sub current_model {
+    my ($client) = @_;
+    
+    # Connect first to initialize models
+    $client->connect() unless $client->{mock_mode};
+    
+    my $current = $client->get_current_model();
+    print "Current model: " . ($current || 'none') . "\n";
+}
+
+sub run_all_tests {
+    print "Running all tests...\n";
+    exec 'make', 'test';
+}
+
+sub run_self_test {
+    my ($ui, $client, $tools, $permissions) = @_;
+    
+    print "Running self-tests...\n\n";
+    
+    # Test UI commands
+    print "Testing TUI commands:\n";
+    my $result = $ui->run_comprehensive_test_suite();
+    print $result->{passed} ? "✓" : "✗";
+    print " TUI commands: $result->{total_tests} tests\n";
+    
+    # Test client connection
+    print "Testing client:\n";
+    $client->{mock_mode} = 1;
+    $client->{mock_models} = ['llama3', 'llama2'];
+    print $client->connect() ? "✓" : "✗";
+    print " Client connection\n";
+    
+    # Test tools
+    print "Testing tools:\n";
+    my @tool_list = $tools->list_tools();
+    print "✓ Tools loaded: " . scalar(@tool_list) . "\n";
+    
+    print "\nSelf-test completed.\n";
+}
+
+sub test_config {
+    my ($config) = @_;
+    
+    print "Testing configuration...\n";
+    my $defaults = $config->load_defaults();
+    print $config->validate($defaults) ? "✓" : "✗";
+    print " Configuration validation\n";
+    
+    print "Ollama host: " . $config->get('ollama.host') . "\n";
+    print "Ollama port: " . $config->get('ollama.port') . "\n";
+    print "Default model: " . $config->get('ollama.default_model') . "\n";
+}
+
+sub validate_tools {
+    my ($tools) = @_;
+    
+    print "Validating tools...\n";
+    my @tool_list = $tools->list_tools();
+    
+    for my $tool (@tool_list) {
+        my $valid = $tools->validate_tool($tool);
+        my $permission = $tools->check_permission($tool);
+        my $safety = $permission == 0 ? 'SAFE' : $permission == 1 ? 'DANGEROUS' : 'BLOCKED';
+        
+        print $valid ? "✓" : "✗";
+        print " $tool [$safety]\n";
+    }
+    
+    print "\nTotal tools: " . scalar(@tool_list) . "\n";
+}
+
+sub health_check {
+    my ($client, $config) = @_;
+    
+    print "System health check...\n\n";
+    
+    # Check config
+    print "Configuration: ";
+    my $defaults = $config->load_defaults();
+    print $config->validate($defaults) ? "✓ OK\n" : "✗ FAIL\n";
+    
+    # Check Ollama connection
+    print "Ollama connection: ";
+    if ($client->connect()) {
+        print "✓ OK\n";
+        print "Available models: " . scalar($client->list_models()) . "\n";
+    } else {
+        print "✗ FAIL\n";
+    }
+    
+    # Check dependencies
+    print "Dependencies: ";
+    eval { require JSON; require LWP::UserAgent; require YAML::Tiny; };
+    print $@ ? "✗ FAIL\n" : "✓ OK\n";
+    
+    print "\nHealth check completed.\n";
+}
+
+sub test_tui_stdin {
+    my ($ui) = @_;
+    
+    # Read commands from stdin
+    my $input = do { local $/; <STDIN> };
+    my @commands = $ui->parse_stdin_commands($input);
+    
+    my $result = $ui->run_automated_session(\@commands);
+    print $result->{output};
+}
+
+sub test_tui_script {
+    my ($ui, $script_file) = @_;
+    
+    my @commands = $ui->read_command_file($script_file);
+    unless (@commands) {
+        print "✗ Failed to read script file: $script_file\n";
+        exit 1;
+    }
+    
+    print "Running TUI script: $script_file\n";
+    my $result = $ui->run_automated_session(\@commands);
+    print $result->{output};
+}
+
+sub direct_prompt {
+    my ($ui, $client, $prompt) = @_;
+    
+    # Connect to Ollama unless in mock mode
+    unless ($client->{mock_mode}) {
+        unless ($client->connect()) {
+            print "✗ Failed to connect to Ollama\n";
+            exit 1;
+        }
+    }
+    
+    # Inject system prompt
+    my $full_prompt = $ui->inject_system_prompt($prompt);
+    
+    # Send to Ollama
+    my $response = $client->chat($full_prompt);
+    
+    # Parse tool calls and execute them
+    my @tool_calls = $ui->parse_tool_calls($response);
+    
+    if (@tool_calls) {
+        print "Tool calls detected:\n";
+        for my $tool_call (@tool_calls) {
+            print "- $tool_call->{name}(" . join(', ', @{$tool_call->{args}}) . ")\n";
+        }
+    }
+    
+    print "\nResponse: $response\n";
+}
+
+sub interactive_mode {
+    my ($ui, $client, $session) = @_;
+    
+    print "LocalCode by Aionda GmbH - Interactive Mode\n";
+    print "Type /help for commands or /exit to quit\n";
+    
+    # Setup readline for autocompletion (REQUIRED - will die if not available)
+    $ui->setup_readline();
+    
+    # Connect to Ollama unless in mock mode
+    unless ($client->{mock_mode}) {
+        unless ($client->connect()) {
+            print "✗ Failed to connect to Ollama\n";
+            print "Starting in offline mode...\n\n";
+        }
+    }
+    
+    # Ensure a model is selected
+    my $current_model = $client->get_current_model();
+    if (!$current_model && !$client->{mock_mode}) {
+        # Try to initialize a model if none is set
+        if ($client->initialize_current_model()) {
+            $current_model = $client->get_current_model();
+        }
+    }
+    
+    # Show current model
+    if ($current_model) {
+        print "Model: $current_model\n\n";
+    } else {
+        print "Model: none selected\n\n";
+    }
+    
+    # Create new session
+    $session->new_session('interactive_session');
+    
+    while (1) {
+        my $input = $ui->readline_prompt("localcode> ");
+        chomp $input if defined $input;
+        
+        last unless defined $input;
+        next if $input eq '';
+        
+        # Handle slash commands
+        if ($input =~ /^\//) {
+            my $result = $ui->handle_slash_command($input, $client, $session);
+            
+            if ($result) {
+                # Exit on /exit command without printing message again
+                if ($input eq '/exit') {
+                    print "$result\n";
+                    last;
+                } else {
+                    print "$result\n";
+                }
+            } else {
+                print "Unknown command. Type /help for available commands.\n";
+            }
+            next;
+        }
+        
+        # Regular chat
+        my $full_prompt = $ui->inject_system_prompt($input);
+        my $response = $client->chat($full_prompt);
+        
+        # Add to session
+        $session->add_message('user', $input);
+        $session->add_message('assistant', $response);
+        
+        # Parse and execute tool calls
+        my @tool_calls = $ui->parse_tool_calls($response);
+        if (@tool_calls) {
+            print "\nExecuting tool calls:\n";
+            for my $tool_call (@tool_calls) {
+                # Show XML format for clarity
+                if ($tool_call->{raw_args}) {
+                    my $args_str = join(', ', map { "\"$_\": \"$tool_call->{raw_args}->{$_}\"" } keys %{$tool_call->{raw_args}});
+                    print "- <tool_call name=\"$tool_call->{name}\" args={$args_str}>\n";
+                } else {
+                    print "- $tool_call->{name}(" . join(', ', @{$tool_call->{args}}) . ")\n";
+                }
+                
+                # Check permissions and execute
+                my $permission = $permissions->get_permission_for_tool($tool_call->{name});
+                
+                if ($permission == 0) {  # SAFE
+                    my $result = $tools->execute_tool($tool_call->{name}, $tool_call->{args});
+                    if ($result->{success}) {
+                        print "  ✅ " . ($result->{message} || "Success") . "\n";
+                        # Show output for exec/bash commands
+                        if (($tool_call->{name} eq 'bash' || $tool_call->{name} eq 'exec') && $result->{output}) {
+                            my $output = $result->{output};
+                            chomp $output;  # Remove trailing newline
+                            print "  Output: $output\n";
+                        }
+                    } else {
+                        print "  ❌ " . ($result->{error} || "Failed") . "\n";
+                    }
+                } elsif ($permission == 1) {  # DANGEROUS - ask for permission
+                    print "  ⚠️  This is a dangerous operation!\n";
+                    print "  Tool: $tool_call->{name}\n";
+                    print "  Args: " . join(', ', @{$tool_call->{args}}) . "\n";
+                    print "  Allow? (y/N): ";
+                    
+                    my $answer = <STDIN>;
+                    chomp $answer if defined $answer;
+                    
+                    if ($answer && $answer =~ /^y(es)?$/i) {
+                        my $result = $tools->execute_tool($tool_call->{name}, $tool_call->{args});
+                        if ($result->{success}) {
+                            print "  ✅ " . ($result->{message} || "Success") . "\n";
+                            # Show output for exec/bash commands
+                            if (($tool_call->{name} eq 'bash' || $tool_call->{name} eq 'exec') && $result->{output}) {
+                                my $output = $result->{output};
+                                chomp $output;  # Remove trailing newline
+                                print "  Output: $output\n";
+                            }
+                        } else {
+                            print "  ❌ " . ($result->{error} || "Failed") . "\n";
+                        }
+                    } else {
+                        print "  ❌ Operation cancelled\n";
+                    }
+                } else {  # BLOCKED
+                    print "  🚫 Operation blocked by policy\n";
+                }
+            }
+            print "\n";
+        }
+        
+        print "\n$response\n\n";
+    }
+    
+    # Only print goodbye if we didn't exit via /exit command
+    # (which already printed its own goodbye)
+}

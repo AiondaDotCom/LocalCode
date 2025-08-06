@@ -6,6 +6,10 @@ A compact, Perl-based AI coding agent with browser tools and gpt-oss support tha
 
 *LocalCode executing multiple tool calls in sequence: creating a Perl calculator, making it executable, and testing it - all from a single AI prompt.*
 
+![GPT-OSS Advanced Example](gpt-oss_120b.png)
+
+*Using the open-source GPT-OSS:120b model from OpenAI, LocalCode can create sophisticated web applications locally. This example shows the AI creating a complete calculator web app with HTML, CSS, and JavaScript from a single prompt "Create a calculator as web app."*
+
 ## Features
 
 ### Core Features
@@ -203,11 +207,12 @@ AI: Tests the final program with sample input
 ```
 
 ### gpt-oss Model Support
-Special optimizations for thinking field models:
+Special optimizations for OpenAI's open-source GPT-OSS models:
 - **Thinking Display**: Shows AI reasoning process during analysis
 - **Optimized Prompting**: Clear instructions for tool call placement
 - **Enhanced Parsing**: Robust handling of thinking + response structure
 - **Context Management**: Efficient conversation flow with thinking content
+- **Advanced Applications**: Create sophisticated web apps, full-stack solutions, and complex multi-file projects locally with models like GPT-OSS:120b
 
 ## Configuration
 
@@ -260,6 +265,12 @@ localcode --test-mode "webfind hello"
 # Test gpt-oss models with follow-up execution
 localcode --set-model "gpt-oss:20b"
 localcode --auto-yes "erstelle ein C-Programm das zwei Zahlen addiert"
+
+# Advanced web development with gpt-oss:120b
+localcode --set-model "gpt-oss:120b"
+localcode --auto-yes "Create a calculator as web app"
+localcode --auto-yes "Build a todo list application with local storage"
+localcode --auto-yes "Create a responsive landing page with animations"
 
 # Test robust tool parsing
 localcode --test-mode "create a complex script with multiple steps"

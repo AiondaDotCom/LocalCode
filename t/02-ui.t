@@ -1,7 +1,7 @@
 #!/usr/bin/env perl
 use strict;
 use warnings;
-use Test::More tests => 62;
+use Test::More tests => 68;
 use lib 'lib';
 
 BEGIN { use_ok('LocalCode::UI') }
@@ -164,3 +164,22 @@ like($write_tool->{args}[1], qr/perl.*strict.*warnings.*Enter first number.*oper
 my @bash_commands = map { $_->{args}[0] } @bash_tools;
 ok((grep { $_ eq 'chmod +x calc.pl' } @bash_commands), 'Real world: chmod command found');
 ok((grep { $_ eq './calc.pl' } @bash_commands), 'Real world: run command found');
+
+# Test model autocompletion
+use LocalCode::Client;
+my $mock_client = LocalCode::Client->new();
+$mock_client->{mock_mode} = 1;
+$mock_client->{mock_models} = ['gpt-oss:20b', 'gpt-oss:120b', 'llama3:8b', 'mistral:7b'];
+$ui->{client} = $mock_client;
+
+my @gpt_matches = $ui->autocomplete_model('gpt');
+is(scalar @gpt_matches, 2, 'Model autocomplete: gpt prefix matches 2 models');
+ok((grep { $_ eq 'gpt-oss:20b' } @gpt_matches), 'Model autocomplete: gpt-oss:20b found');
+ok((grep { $_ eq 'gpt-oss:120b' } @gpt_matches), 'Model autocomplete: gpt-oss:120b found');
+
+my @llama_matches = $ui->autocomplete_model('llama');
+is(scalar @llama_matches, 1, 'Model autocomplete: llama prefix matches 1 model');
+is($llama_matches[0], 'llama3:8b', 'Model autocomplete: llama3:8b found');
+
+my @empty_matches = $ui->autocomplete_model('nonexistent');
+is(scalar @empty_matches, 0, 'Model autocomplete: no matches for nonexistent prefix');

@@ -18,7 +18,7 @@ $tools->register_tool('search', 0, \&mock_search); # SAFE
 
 # Test tool loading
 my @tool_list = $tools->list_tools();
-is(scalar @tool_list, 14, 'All tools loaded'); # read, write, exec, bash, search, grep, edit, list, glob, patch, webfetch, todowrite, todoread, task
+is(scalar @tool_list, 18, 'All tools loaded'); # read, write, exec, bash, search, grep, edit, list, glob, patch, webfetch, websearch, webopen, webfind, webget, todowrite, todoread, task
 
 # Test permission checking - now handled by Permissions module
 use LocalCode::Permissions;

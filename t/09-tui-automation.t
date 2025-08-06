@@ -81,6 +81,6 @@ is($mixed_result->{error_count}, 1, 'One command failed');
 # Test comprehensive automation suite (simplified)
 my $full_test_result = $ui->run_comprehensive_test_suite();
 ok($full_test_result->{passed}, 'Comprehensive test suite passed');
-is($full_test_result->{total_tests}, 11, 'All basic TUI commands tested');
+is($full_test_result->{total_tests}, 13, 'All basic TUI commands tested');
 
 unlink $input_file;

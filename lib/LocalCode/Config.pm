@@ -3,14 +3,24 @@ use strict;
 use warnings;
 use YAML::Tiny;
 use File::Spec;
+use File::Path qw(make_path);
+
+our $VERSION = '1.0.0';
 
 sub new {
     my ($class, %args) = @_;
     my $self = {
         config_file => $args{config_file} || 'config/default.yaml',
         config_data => {},
+        home_dir => $ENV{HOME} || $ENV{USERPROFILE} || '.',
+        localcode_dir => undef,
     };
     bless $self, $class;
+    
+    # Create ~/.localcode directory structure
+    $self->{localcode_dir} = File::Spec->catdir($self->{home_dir}, '.localcode');
+    $self->_ensure_localcode_dir();
+    
     $self->_load_config();
     return $self;
 }
@@ -80,6 +90,64 @@ sub validate {
     return 0 unless $config->{ollama}->{port} && $config->{ollama}->{port} =~ /^\d+$/;
     
     return 1;
+}
+
+# Home directory management
+sub _ensure_localcode_dir {
+    my ($self) = @_;
+    
+    unless (-d $self->{localcode_dir}) {
+        make_path($self->{localcode_dir}) or die "Cannot create ~/.localcode directory: $!";
+    }
+    
+    # Create subdirectories
+    my $sessions_dir = File::Spec->catdir($self->{localcode_dir}, 'sessions');
+    make_path($sessions_dir) unless -d $sessions_dir;
+}
+
+sub get_localcode_dir {
+    my ($self) = @_;
+    return $self->{localcode_dir};
+}
+
+sub get_sessions_dir {
+    my ($self) = @_;
+    return File::Spec->catdir($self->{localcode_dir}, 'sessions');
+}
+
+
+sub save_last_model {
+    my ($self, $model) = @_;
+    my $model_file = File::Spec->catfile($self->{localcode_dir}, 'last_model.txt');
+    
+    # Trim whitespace before saving
+    $model =~ s/^\s+|\s+$//g if $model;
+    
+    open my $fh, '>', $model_file or warn "Cannot save last model: $!";
+    print $fh $model if $fh;
+    close $fh if $fh;
+}
+
+sub load_last_model {
+    my ($self) = @_;
+    my $model_file = File::Spec->catfile($self->{localcode_dir}, 'last_model.txt');
+    
+    return '' unless -f $model_file;
+    
+    open my $fh, '<', $model_file or return '';
+    my $model = <$fh>;
+    close $fh;
+    
+    if ($model) {
+        chomp $model;
+        $model =~ s/^\s+|\s+$//g;  # Trim whitespace
+    }
+    return $model || '';
+}
+
+sub get_version {
+    my ($self) = @_;
+    return $VERSION;
 }
 
 sub merge {

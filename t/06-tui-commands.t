@@ -12,9 +12,24 @@ BEGIN {
 }
 
 my $temp_dir = tempdir(CLEANUP => 1);
-my $ui = LocalCode::UI->new();
+
+# Create components with proper initialization
+use LocalCode::Config;
+use LocalCode::Permissions;
+use LocalCode::Tools;
+
+my $config = LocalCode::Config->new();
+my $permissions = LocalCode::Permissions->new(config => $config);
+my $tools = LocalCode::Tools->new(config => $config, permissions => $permissions);
 my $client = LocalCode::Client->new();
 my $session = LocalCode::Session->new(session_dir => $temp_dir);
+my $ui = LocalCode::UI->new(
+    config => $config,
+    client => $client,
+    tools => $tools,
+    permissions => $permissions,
+    session => $session,
+);
 
 # Set up mock mode
 $ui->{test_mode} = 1;

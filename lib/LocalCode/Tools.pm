@@ -1,6 +1,8 @@
 package LocalCode::Tools;
 use strict;
 use warnings;
+use JSON;
+use URI::Escape;
 
 sub new {
     my ($class, %args) = @_;
@@ -13,6 +15,10 @@ sub new {
         auto_approve => 0,
         mock_execution => 0,
         simulate_only => 0,
+        # Browser state for web tools
+        browser_pages => {},
+        browser_stack => [],
+        current_page_id => 0,
     };
     bless $self, $class;
     
@@ -36,6 +42,10 @@ sub _register_default_tools {
     $self->register_tool('glob', 0, \&_tool_glob);
     $self->register_tool('patch', 1, \&_tool_patch);
     $self->register_tool('webfetch', 0, \&_tool_webfetch);
+    $self->register_tool('websearch', 0, \&_tool_websearch);
+    $self->register_tool('webopen', 0, \&_tool_webopen);
+    $self->register_tool('webfind', 0, \&_tool_webfind);
+    $self->register_tool('webget', 0, \&_tool_webget);
     $self->register_tool('todowrite', 0, \&_tool_todowrite);
     $self->register_tool('todoread', 0, \&_tool_todoread);
     $self->register_tool('task', 1, \&_tool_task);
@@ -140,7 +150,12 @@ sub execute_tool {
     }
     
     my $result = eval {
-        $tool->{handler}->(@$args);
+        # Browser tools need $self reference, others don't
+        if ($name =~ /^web(search|open|find|get)$/) {
+            $tool->{handler}->($self, @$args);
+        } else {
+            $tool->{handler}->(@$args);
+        }
     };
     
     if ($@) {
@@ -389,6 +404,62 @@ sub _tool_webfetch {
     };
 }
 
+sub _tool_webget {
+    my $self = shift;
+    my ($query) = @_;
+    
+    # Step 1: Search
+    my $search_result = $self->_tool_websearch($query);
+    unless ($search_result->{success}) {
+        return $search_result;
+    }
+    
+    # Step 2: Extract first good URL and open it
+    my @urls = ($search_result->{content} =~ m{https?://[^\s<>"'()]+}g);
+    
+    # Clean up URLs
+    @urls = map { 
+        s/[.,;:!?)\]}>]*$//;  # Remove trailing punctuation
+        s/#.*$//;             # Remove fragments
+        $_; 
+    } @urls;
+    
+    # Remove duplicates and keep valid URLs  
+    my %seen;
+    @urls = grep { !$seen{$_}++ && $_ =~ m{^https?://[^/\s]+} } @urls;
+    
+    unless (@urls) {
+        return {
+            success => 0,
+            error => "No valid URLs found in search results"
+        };
+    }
+    
+    # Try the first few URLs until one works, preferring specific pages
+    for my $i (0..4) {  # Try more URLs
+        last unless $urls[$i];
+        
+        my $open_result = $self->_tool_webopen($urls[$i]);
+        if ($open_result->{success}) {
+            # Return the first working URL - no domain-specific filtering
+            
+            return {
+                success => 1,
+                message => "Found and opened webpage: $urls[$i]",
+                content => $open_result->{content},
+                search_query => $query,
+                url => $urls[$i],
+                page_id => $open_result->{page_id}
+            };
+        }
+    }
+    
+    return {
+        success => 0,
+        error => "Could not open any of the found URLs"
+    };
+}
+
 sub _tool_todowrite {
     my ($task_description) = @_;
     
@@ -447,6 +518,306 @@ sub _tool_task {
         message => $exit_code == 0 ? "Task completed successfully" : "Task failed with exit code $exit_code",
         output => $output,
         exit_code => $exit_code
+    };
+}
+
+# Browser Tools Implementation
+
+sub _tool_websearch {
+    my $self = shift;
+    my ($query) = @_;
+    
+    my $encoded_query = uri_escape($query);
+    
+    # Try multiple search engines - robust fallback system
+    my @search_engines = (
+        {
+            name => "Mojeek",
+            url => "https://www.mojeek.com/search?q=$encoded_query",
+            user_agent => "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"
+        },
+        {
+            name => "DuckDuckGo HTML",
+            url => "https://html.duckduckgo.com/html/?q=$encoded_query",
+            user_agent => "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"
+        },
+        {
+            name => "Startpage",
+            url => "https://www.startpage.com/sp/search?query=$encoded_query",
+            user_agent => "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"
+        },
+        {
+            name => "Bing",
+            url => "https://www.bing.com/search?q=$encoded_query",
+            user_agent => "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"
+        }
+    );
+    
+    my $html_content;
+    my $used_engine;
+    my $used_url;
+    
+    for my $engine (@search_engines) {
+        my $cmd = qq{curl -s -k -A "$engine->{user_agent}" "$engine->{url}"};
+        $html_content = `$cmd 2>/dev/null`;
+        my $exit_code = $? >> 8;
+        
+        if ($exit_code == 0 && $html_content && length($html_content) > 500) {
+            # Quick test for meaningful content
+            my $test_content = $html_content;
+            $test_content =~ s/<script.*?<\/script>//gsi;
+            $test_content =~ s/<style.*?<\/style>//gsi;
+            $test_content =~ s/<[^>]+>//g;
+            $test_content =~ s/\s+/ /g;
+            
+            # If we got substantial cleaned content, use this engine
+            if (length($test_content) > 300) {
+                $used_engine = $engine->{name};
+                $used_url = $engine->{url};
+                last;
+            }
+        }
+    }
+    
+    unless ($html_content && $used_engine) {
+        return {
+            success => 0,
+            error => "All search engines failed - please check internet connection"
+        };
+    }
+    
+    # Clean HTML - remove scripts, styles, and convert to text
+    $html_content =~ s/<script.*?<\/script>//gsi;
+    $html_content =~ s/<style.*?<\/style>//gsi;
+    $html_content =~ s/<noscript.*?<\/noscript>//gsi;
+    $html_content =~ s/<!--.*?-->//gs;
+    $html_content =~ s/<head.*?<\/head>//gsi;
+    
+    # Convert HTML entities
+    $html_content =~ s/&nbsp;/ /g;
+    $html_content =~ s/&amp;/&/g;
+    $html_content =~ s/&lt;/</g;
+    $html_content =~ s/&gt;/>/g;
+    $html_content =~ s/&quot;/"/g;
+    $html_content =~ s/&#39;/'/g;
+    $html_content =~ s/&#8211;/-/g;
+    $html_content =~ s/&#8212;/--/g;
+    $html_content =~ s/&#x2715;/x/g;
+    $html_content =~ s/&#(\d+);/chr($1)/ge;
+    $html_content =~ s/&rsaquo;/>/g;
+    
+    # Remove all HTML tags
+    $html_content =~ s/<[^>]+>//g;
+    
+    # Clean up whitespace and normalize
+    $html_content =~ s/\r\n/\n/g;
+    $html_content =~ s/\s+/ /g;
+    $html_content =~ s/^\s+|\s+$//g;
+    
+    # Remove Mojeek-specific navigation noise
+    $html_content =~ s/Mojeek User Survey.*?Results \d+ to \d+ from \d+.*?in \d+\.\d+s//gs;
+    $html_content =~ s/(SearchWebImagesNewsSubstickCompanyPress|MediaCareersContact|UsProductsMojeekAdsFocusWeb|SearchAPISiteSearchAPI|SimpleSearchBoxes|SupportSupportBrowsersMobile|APIDocsEngageBlogCommunityNewsletter)//g;
+    
+    # Remove general navigation/footer noise
+    $html_content =~ s/(Privacy|Terms|Settings|About|Help|Sign in|Advertisement|Cookie|JavaScript|Enable|Disable|Menu|Navigation|Header|Footer)(\s+\w+)*\s*//gi;
+    $html_content =~ s/\b(More results|Related searches|People also ask|Submit feedback|Change|Prev|Next|WebSummaryImagesNews|United Kingdom|Germany|France|European Union|All Regions|Advanced Search|Preferences|Focus|Language None|Safe Search Off|Theme Light)\b\s*//gim;
+    
+    # Remove duplicate whitespace and clean up
+    $html_content =~ s/\s+/ /g;
+    $html_content =~ s/^\s+|\s+$//g;
+    
+    # If content is still too short, provide fallback message
+    if (length($html_content) < 200) {
+        $html_content = "Search performed for '$query' using $used_engine. Limited results available - search engines may be blocking automated requests. Try more specific search terms.";
+    }
+    
+    # Truncate if too long but keep meaningful content
+    if (length($html_content) > 4000) {
+        # Try to truncate at sentence boundaries
+        my $truncated = substr($html_content, 0, 3800);
+        if ($truncated =~ /^(.*\.)\s+\w/) {
+            $html_content = $1 . "\n\n[Search results truncated for readability...]";
+        } else {
+            $html_content = substr($html_content, 0, 3800) . "\n\n[Search results truncated for readability...]";
+        }
+    }
+    
+    # Store in browser state
+    my $page_id = ++$self->{current_page_id};
+    $self->{browser_pages}->{$page_id} = {
+        title => "Search: $query",
+        url => $used_url,
+        content => $html_content,
+        type => 'search',
+        engine => $used_engine
+    };
+    push @{$self->{browser_stack}}, $page_id;
+    
+    # Format clean content for AI interpretation
+    my $display = "🔍 Internet Search Results for: $query (via $used_engine)\n\n";
+    $display .= $html_content . "\n\n";
+    $display .= "[Note: These are real search results from $used_engine. Please extract and interpret the most relevant information.]";
+    
+    return {
+        success => 1,
+        message => "Retrieved search results from $used_engine",
+        content => $display,
+        page_id => $page_id,
+        url => $used_url,
+        engine => $used_engine
+    };
+}
+
+sub _tool_webopen {
+    my $self = shift;
+    my ($url_or_id) = @_;
+    
+    # Use curl for better SSL support
+    
+    my $url;
+    
+    # Check if it's a result ID from search
+    if ($url_or_id =~ /^\d+$/) {
+        my $current_page = $self->{browser_stack}->[-1];
+        if ($current_page && $self->{browser_pages}->{$current_page}) {
+            my $page = $self->{browser_pages}->{$current_page};
+            if ($page->{type} eq 'search') {
+                # Extract URLs from cleaned content - get clean URLs
+                my @urls = ($page->{content} =~ m{https?://[^\s<>"'()]+}g);
+                
+                # Clean up URLs - remove trailing punctuation and fragments
+                @urls = map { 
+                    s/[.,;:!?)\]}>]*$//;  # Remove trailing punctuation
+                    s/#.*$//;             # Remove fragments
+                    $_; 
+                } @urls;
+                
+                # Remove duplicates and invalid URLs
+                my %seen;
+                @urls = grep { !$seen{$_}++ && $_ =~ m{^https?://[^/]+/} } @urls;
+                
+                my $result_id = int($url_or_id);
+                if ($result_id < @urls) {
+                    $url = $urls[$result_id];
+                }
+            }
+        }
+        
+        unless ($url) {
+            return {
+                success => 0,
+                error => "Invalid result ID: $url_or_id. Use webopen with a full URL instead."
+            };
+        }
+    } else {
+        $url = $url_or_id;
+    }
+    
+    # Fetch the webpage using curl
+    my $content = `curl -s -L -A "LocalCode/1.0" --max-time 30 -k "$url" 2>/dev/null`;
+    my $exit_code = $? >> 8;
+    
+    if ($exit_code != 0) {
+        return {
+            success => 0,
+            error => "Failed to fetch $url: curl exit code $exit_code"
+        };
+    }
+    
+    # Simple HTML to text conversion (basic)
+    $content =~ s/<script.*?<\/script>//gsi;
+    $content =~ s/<style.*?<\/style>//gsi;
+    $content =~ s/<[^>]+>//g;
+    $content =~ s/&nbsp;/ /g;
+    $content =~ s/&amp;/&/g;
+    $content =~ s/&lt;/</g;
+    $content =~ s/&gt;/>/g;
+    $content =~ s/\s+/ /g;
+    
+    # Truncate if too long
+    if (length($content) > 8000) {
+        $content = substr($content, 0, 8000) . "\n\n[Content truncated...]";
+    }
+    
+    # Store page
+    my $page_id = ++$self->{current_page_id};
+    $self->{browser_pages}->{$page_id} = {
+        title => 'Web Page',  # curl doesn't provide easy title extraction
+        url => $url,
+        content => $content,
+        type => 'webpage'
+    };
+    push @{$self->{browser_stack}}, $page_id;
+    
+    return {
+        success => 1,
+        message => "Opened webpage: $url",
+        content => $content,
+        page_id => $page_id,
+        url => $url
+    };
+}
+
+sub _tool_webfind {
+    my $self = shift;
+    my ($pattern, $page_id) = @_;
+    
+    # Use current page if no ID specified
+    $page_id ||= $self->{browser_stack}->[-1] if @{$self->{browser_stack}};
+    
+    unless ($page_id && $self->{browser_pages}->{$page_id}) {
+        return {
+            success => 0,
+            error => "No webpage available to search"
+        };
+    }
+    
+    my $page = $self->{browser_pages}->{$page_id};
+    my $content = $page->{content};
+    
+    my @matches = ();
+    my @lines = split /\n/, $content;
+    
+    for my $i (0..$#lines) {
+        if ($lines[$i] =~ /\Q$pattern\E/i) {
+            my $context_start = $i > 2 ? $i - 2 : 0;
+            my $context_end = $i + 2 < @lines ? $i + 2 : $#lines;
+            
+            my $match_context = join("\n", 
+                map { sprintf("L%d: %s", $_ + 1, $lines[$_]) } 
+                ($context_start..$context_end)
+            );
+            
+            push @matches, {
+                line => $i + 1,
+                context => $match_context,
+                text => $lines[$i]
+            };
+        }
+    }
+    
+    my $result_text = "🔍 Find results for '$pattern' in " . $page->{title} . "\n\n";
+    
+    if (@matches) {
+        $result_text .= sprintf("Found %d matches:\n\n", scalar(@matches));
+        for my $i (0..($#matches < 9 ? $#matches : 9)) {  # Limit to 10 results
+            my $match = $matches[$i];
+            $result_text .= sprintf("[Match %d at line %d]\n%s\n\n", 
+                $i + 1, $match->{line}, $match->{context});
+        }
+        
+        if (@matches > 10) {
+            $result_text .= sprintf("... and %d more matches\n", @matches - 10);
+        }
+    } else {
+        $result_text .= "No matches found.\n";
+    }
+    
+    return {
+        success => 1,
+        message => "Found " . scalar(@matches) . " matches",
+        content => $result_text,
+        matches => \@matches
     };
 }
 

@@ -3,11 +3,16 @@ use strict;
 use warnings;
 use JSON;
 use File::Spec;
+use File::Path qw(make_path);
 
 sub new {
     my ($class, %args) = @_;
+    
+    # Always use ~/.localcode/sessions unless explicitly overridden (for testing)
+    my $default_session_dir = File::Spec->catdir($ENV{HOME}, '.localcode', 'sessions');
+    
     my $self = {
-        session_dir => $args{session_dir} || 'sessions',
+        session_dir => $args{session_dir} || $default_session_dir,
         config => $args{config},
         current_session => undef,
         history => [],
@@ -15,8 +20,11 @@ sub new {
     };
     bless $self, $class;
     
-    # Create session directory if it doesn't exist
-    mkdir $self->{session_dir} unless -d $self->{session_dir};
+    # Create session directory if it doesn't exist (including parent directories)
+    make_path($self->{session_dir}) unless -d $self->{session_dir};
+    
+    # Initialize messages array for backward compatibility
+    $self->{messages} = [];
     
     return $self;
 }
@@ -30,20 +38,6 @@ sub new_session {
     return $session_name;
 }
 
-sub add_message {
-    my ($self, $role, $content) = @_;
-    
-    push @{$self->{history}}, {
-        role => $role,
-        content => $content,
-        timestamp => time(),
-    };
-    
-    # Limit history size
-    if (@{$self->{history}} > $self->{max_history}) {
-        splice @{$self->{history}}, 0, @{$self->{history}} - $self->{max_history};
-    }
-}
 
 sub get_history {
     my ($self) = @_;
@@ -184,6 +178,30 @@ sub cleanup_temp_files {
     my ($self) = @_;
     # For now, this is a no-op, but could clean up temporary session files
     return 1;
+}
+
+
+sub add_message {
+    my ($self, $role, $content) = @_;
+    
+    # Add to session history
+    push @{$self->{history}}, {
+        role => $role,
+        content => $content,
+        timestamp => time(),
+    };
+    
+    # Limit session history size
+    if (@{$self->{history}} > $self->{max_history}) {
+        splice @{$self->{history}}, 0, @{$self->{history}} - $self->{max_history};
+    }
+    
+    # ALSO add to messages array (for backward compatibility with get_messages_for_chat())
+    push @{$self->{messages}}, {
+        role => $role,
+        content => $content,
+        timestamp => time()
+    };
 }
 
 1;

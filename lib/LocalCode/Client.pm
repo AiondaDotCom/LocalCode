@@ -12,7 +12,7 @@ sub new {
         port => $args{port} || 11434,
         timeout => $args{timeout} || 120,
         current_model => undef,
-        default_model => 'qwen2.5:32b',
+        default_model => 'codellama:latest',
         available_models => [],
         mock_mode => 0,
         mock_models => [],
@@ -193,6 +193,16 @@ sub chat {
         stream => JSON::false,
     };
     
+    # Call the common chat implementation
+    return $self->_chat_request($url, $payload);
+}
+
+
+sub _chat_request {
+    my ($self, $url, $payload) = @_;
+    
+    my $model = $payload->{model};  # Get model from payload
+    
     my $response = $self->{ua}->post(
         $url,
         'Content-Type' => 'application/json',
@@ -204,14 +214,24 @@ sub chat {
         if ($data) {
             # Handle different Ollama response formats
             if ($data->{message} && exists $data->{message}->{content}) {
-                # Return content even if it's empty (defined but empty string)
-                return $data->{message}->{content};
+                my $content = $data->{message}->{content};
+                
+                # For gpt-oss models, include thinking if available
+                if ($model =~ /gpt-oss/ && $data->{message}->{thinking}) {
+                    $content = "**Thinking...**\n" . $data->{message}->{thinking} . "\n\n**Response:**\n" . $content;
+                }
+                
+                return $content;
             } elsif ($data->{response}) {
                 # Fallback to old /api/generate format
                 return $data->{response};
             } elsif (exists $data->{content}) {
-                # Another possible format
-                return $data->{content};
+                # Another possible format - check for thinking field too
+                my $content = $data->{content};
+                if ($model =~ /gpt-oss/ && $data->{thinking}) {
+                    $content = "**Thinking...**\n" . $data->{thinking} . "\n\n**Response:**\n" . $content;
+                }
+                return $content;
             } else {
                 # Debug: show what we actually got
                 return "Error: Unexpected response format. Got: " . substr($response->content, 0, 200) . "...";
@@ -237,16 +257,11 @@ sub chat {
     return "Error: " . $response->status_line;
 }
 
+
 sub generate {
     my ($self, $prompt) = @_;
     return $self->chat($prompt);
 }
 
-sub stream_response {
-    my ($self, $prompt) = @_;
-    # For now, just return regular response
-    # In a full implementation, this would handle streaming
-    return $self->chat($prompt);
-}
 
 1;

@@ -15,6 +15,8 @@ sub new {
             shell_exec => 1,     # DANGEROUS
             file_delete => 1,    # DANGEROUS
             web_fetch => 0,      # SAFE
+            web_search => 0,     # SAFE  
+            web_open => 0,       # SAFE
         },
         remembered_permissions => {},
         remember_choice => 1,
@@ -47,6 +49,10 @@ sub get_permission_for_tool {
         'search' => 'grep_search',
         'grep' => 'grep_search',
         'webfetch' => 'web_fetch',
+        'websearch' => 'web_search',
+        'webopen' => 'web_open', 
+        'webfind' => 'web_search',
+        'webget' => 'web_search',
         'edit' => 'file_write',
         'list' => 'file_read',
         'glob' => 'file_read',

@@ -435,6 +435,9 @@ sub interactive_mode {
         $client->get_model_info($current_model);
     }
 
+    # Track "always allow" permissions for this session
+    my %always_allow_tools = ();
+
     while (1) {
         my $input = $ui->readline_prompt("", $client);
         chomp $input if defined $input;
@@ -477,7 +480,7 @@ sub interactive_mode {
         if ($stats && $stats->{percentage} >= 90) {
             print "⚠️  Context usage at $stats->{percentage}%, compressing history...\n";
             my $stop_compress = $ui->show_loading("📦 Summarizing conversation");
-            my $compressed = $session->compress_history($client, 6); # Compress oldest 6 messages
+            my $compressed = $session->compress_history($client); # Dynamic calculation
             $stop_compress->();
 
             if ($compressed > 0) {
@@ -620,8 +623,14 @@ sub interactive_mode {
                 } elsif ($permission == 1) {  # DANGEROUS - ask for permission
                     my $auto_approve = $ui->{auto_approve} || 0;
                     my $answer = '';
-                    
-                    if ($auto_approve) {
+
+                    # Check if this tool is in "always allow" list
+                    if ($always_allow_tools{$tool_call->{name}}) {
+                        print "  ⚠️  This is a dangerous operation (always allowed for this session)!\n";
+                        print "  Tool: $tool_call->{name}\n";
+                        print "  Args: " . join(', ', @{$tool_call->{args}}) . "\n";
+                        $answer = 'y';
+                    } elsif ($auto_approve) {
                         print "  ⚠️  This is a dangerous operation (auto-approved)!\n";
                         print "  Tool: $tool_call->{name}\n";
                         print "  Args: " . join(', ', @{$tool_call->{args}}) . "\n";
@@ -630,12 +639,19 @@ sub interactive_mode {
                         print "  ⚠️  This is a dangerous operation!\n";
                         print "  Tool: $tool_call->{name}\n";
                         print "  Args: " . join(', ', @{$tool_call->{args}}) . "\n";
-                        print "  Allow? (y/N): ";
-                        
+                        print "  Allow? (y/N/a): ";
+
                         $answer = <STDIN>;
                         chomp $answer if defined $answer;
+
+                        # Handle "always allow" option
+                        if ($answer && $answer =~ /^a(lways)?$/i) {
+                            $always_allow_tools{$tool_call->{name}} = 1;
+                            print "  ✓ Tool '$tool_call->{name}' will be always allowed for this session\n";
+                            $answer = 'y';  # Treat as 'yes' for this execution
+                        }
                     }
-                    
+
                     if ($answer && $answer =~ /^y(es)?$/i) {
                         my $result = $tools->execute_tool($tool_call->{name}, $tool_call->{args});
                         if ($result->{success}) {
@@ -707,7 +723,7 @@ sub interactive_mode {
             if ($tool_stats && $tool_stats->{percentage} >= 90) {
                 print "⚠️  Context usage at $tool_stats->{percentage}%, compressing history...\n";
                 my $stop_compress_tool = $ui->show_loading("📦 Summarizing conversation");
-                my $compressed_tool = $session->compress_history($client, 6);
+                my $compressed_tool = $session->compress_history($client); # Dynamic calculation
                 $stop_compress_tool->();
 
                 if ($compressed_tool > 0) {
@@ -736,7 +752,7 @@ sub interactive_mode {
                     $color_code = "32";  # Green
                 }
 
-                my $term_width = $ui->{term_width} || 80;
+                my $term_width = $ui->get_term_width();
                 my $context_text = sprintf("\e[%sm%d%% \e[0m(%d/%d)", $color_code, $percentage, $total, $window);
                 my $context_visible = $context_text;
                 $context_visible =~ s/\e\[[0-9;]*m//g;
@@ -814,8 +830,14 @@ sub interactive_mode {
                         } elsif ($permission == 1) {  # DANGEROUS - ask for permission
                             my $auto_approve = $ui->{auto_approve} || 0;
                             my $answer = '';
-                            
-                            if ($auto_approve) {
+
+                            # Check if this tool is in "always allow" list
+                            if ($always_allow_tools{$tool_call->{name}}) {
+                                print "  ⚠️  This is a dangerous operation (always allowed for this session)!\n";
+                                print "  Tool: $tool_call->{name}\n";
+                                print "  Args: " . join(', ', @{$tool_call->{args}}) . "\n";
+                                $answer = 'y';
+                            } elsif ($auto_approve) {
                                 print "  ⚠️  This is a dangerous operation (auto-approved)!\n";
                                 print "  Tool: $tool_call->{name}\n";
                                 print "  Args: " . join(', ', @{$tool_call->{args}}) . "\n";
@@ -824,12 +846,19 @@ sub interactive_mode {
                                 print "  ⚠️  This is a dangerous operation!\n";
                                 print "  Tool: $tool_call->{name}\n";
                                 print "  Args: " . join(', ', @{$tool_call->{args}}) . "\n";
-                                print "  Allow? (y/N): ";
-                                
+                                print "  Allow? (y/N/a): ";
+
                                 $answer = <STDIN>;
                                 chomp $answer if defined $answer;
+
+                                # Handle "always allow" option
+                                if ($answer && $answer =~ /^a(lways)?$/i) {
+                                    $always_allow_tools{$tool_call->{name}} = 1;
+                                    print "  ✓ Tool '$tool_call->{name}' will be always allowed for this session\n";
+                                    $answer = 'y';  # Treat as 'yes' for this execution
+                                }
                             }
-                            
+
                             if ($answer && $answer =~ /^y(es)?$/i) {
                                 my $result = $tools->execute_tool($tool_call->{name}, $tool_call->{args});
                                 if ($result->{success}) {
@@ -895,7 +924,7 @@ sub interactive_mode {
                         if ($followup_stats && $followup_stats->{percentage} >= 90) {
                             print "⚠️  Context usage at $followup_stats->{percentage}%, compressing history...\n";
                             my $stop_compress_followup = $ui->show_loading("📦 Summarizing conversation");
-                            my $compressed_followup = $session->compress_history($client, 6);
+                            my $compressed_followup = $session->compress_history($client); # Dynamic calculation
                             $stop_compress_followup->();
 
                             if ($compressed_followup > 0) {
@@ -924,7 +953,7 @@ sub interactive_mode {
                                 $color_code = "32";  # Green
                             }
 
-                            my $term_width = $ui->{term_width} || 80;
+                            my $term_width = $ui->get_term_width();
                             my $context_text = sprintf("\e[%sm%d%% \e[0m(%d/%d)", $color_code, $percentage, $total, $window);
                             my $context_visible = $context_text;
                             $context_visible =~ s/\e\[[0-9;]*m//g;
@@ -991,20 +1020,33 @@ sub interactive_mode {
                                     } elsif ($permission == 1) {  # DANGEROUS - ask for permission
                                         my $auto_approve = $ui->{auto_approve} || 0;
                                         my $answer = '';
-                                        
-                                        if ($auto_approve) {
+
+                                        # Check if this tool is in "always allow" list
+                                        if ($always_allow_tools{$tool_call->{name}}) {
+                                            print "  ⚠️  This is a dangerous operation (always allowed for this session)!\n";
+                                            print "  Tool: $tool_call->{name}\n";
+                                            print "  Args: " . join(', ', @{$tool_call->{args}}) . "\n";
+                                            $answer = 'y';
+                                        } elsif ($auto_approve) {
                                             print "  ⚠️  This is a dangerous operation (auto-approved)!\n";
                                             $answer = 'y';
                                         } else {
                                             print "  ⚠️  This is a dangerous operation!\n";
                                             print "  Tool: $tool_call->{name}\n";
                                             print "  Args: " . join(', ', @{$tool_call->{args}}) . "\n";
-                                            print "  Allow? (y/N): ";
-                                            
+                                            print "  Allow? (y/N/a): ";
+
                                             $answer = <STDIN>;
                                             chomp $answer if defined $answer;
+
+                                            # Handle "always allow" option
+                                            if ($answer && $answer =~ /^a(lways)?$/i) {
+                                                $always_allow_tools{$tool_call->{name}} = 1;
+                                                print "  ✓ Tool '$tool_call->{name}' will be always allowed for this session\n";
+                                                $answer = 'y';  # Treat as 'yes' for this execution
+                                            }
                                         }
-                                        
+
                                         if ($answer && $answer =~ /^y(es)?$/i) {
                                             my $result = $tools->execute_tool($tool_call->{name}, $tool_call->{args});
                                             if ($result->{success}) {

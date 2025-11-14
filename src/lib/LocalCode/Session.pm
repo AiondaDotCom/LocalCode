@@ -110,7 +110,39 @@ sub truncate_history_for_context {
 sub compress_history {
     my ($self, $client, $compress_count) = @_;
 
-    $compress_count ||= 6; # Default: compress oldest 6 messages (3 pairs)
+    # If no compress_count specified, calculate dynamically based on context usage
+    if (!$compress_count) {
+        my $stats = $client->get_context_stats();
+        if ($stats && $stats->{context_window} > 0) {
+            my $percentage = $stats->{percentage};
+            my $current_tokens = $stats->{total_tokens};
+            my $window = $stats->{context_window};
+
+            # Target: get back to 60% usage
+            my $target_percentage = 60;
+            my $target_tokens = int($window * $target_percentage / 100);
+            my $tokens_to_free = $current_tokens - $target_tokens;
+
+            # Estimate ~150 tokens per message pair (user + assistant)
+            # This is conservative - actual varies by message length
+            my $avg_tokens_per_pair = 150;
+            my $pairs_to_compress = int($tokens_to_free / $avg_tokens_per_pair) + 1;
+
+            # Convert pairs to messages (2 messages per pair)
+            $compress_count = $pairs_to_compress * 2;
+
+            # Minimum: compress at least 6 messages (3 pairs)
+            $compress_count = 6 if $compress_count < 6;
+
+            # Maximum: don't compress more than 80% of history
+            my @non_system_history = grep { $_->{role} ne 'system' } @{$self->{history}};
+            my $max_compress = int(scalar(@non_system_history) * 0.8);
+            $compress_count = $max_compress if $compress_count > $max_compress;
+        } else {
+            # Fallback if stats not available
+            $compress_count = 6;
+        }
+    }
 
     # Get non-system messages to work with
     my @non_system_history = grep { $_->{role} ne 'system' } @{$self->{history}};

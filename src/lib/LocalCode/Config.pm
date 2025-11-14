@@ -5,7 +5,7 @@ use LocalCode::YAML;
 use File::Spec;
 use File::Path qw(make_path);
 
-our $VERSION = '1.1.0';
+our $VERSION = '1.2.0';
 
 sub new {
     my ($class, %args) = @_;

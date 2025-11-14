@@ -130,7 +130,9 @@ sub parse_tool_calls {
     
     # Parse XML-style tool calls with various formats
     # First, try to find complete tool calls (with proper closing >)
-    while ($extracted_response =~ /<tool_call\s+name="([^"]+)"\s+args=\{([^}]*)\}\s*\/?>/gis) {
+    # Use greedy match to get everything between { and the LAST } before >
+    # This correctly handles JSON with multiple } like {"key": "value", "key2": "value2"}
+    while ($extracted_response =~ /<tool_call\s+name="([^"]+)"\s+args=\{(.+)\}\s*(?:\/?>|>)/gis) {
         my ($tool_name, $args_str) = ($1, $2);
         
         # Skip if not a valid tool
@@ -500,10 +502,19 @@ sub handle_slash_command {
         return "Current model: " . ($current || 'none');
         
     } elsif ($cmd eq 'model') {
-        # If no argument, show current model
+        # If no argument, show current model AND available models
         unless ($args) {
             my $current = $client->get_current_model() if $client;
-            return "Current model: " . ($current || 'none');
+            my @models = $client->list_models() if $client;
+
+            my $output = "Current model: " . ($current || 'none') . "\n\n";
+            $output .= "Available models:\n";
+            for my $model (@models) {
+                $output .= "- $model";
+                $output .= " (current)" if $current && $model eq $current;
+                $output .= "\n";
+            }
+            return $output;
         }
         # Trim whitespace from model name (from autocompletion)
         $args =~ s/^\s+|\s+$//g;
@@ -620,8 +631,13 @@ sub handle_slash_command {
         }
         
     } elsif ($cmd eq 'version') {
-        my $version = $self->{config} ? $self->{config}->get_version() : '1.1.0';
+        my $version = $self->{config} ? $self->{config}->get_version() : '1.2.0';
         return "LocalCode version $version";
+
+    } elsif ($cmd eq 'pwd') {
+        # Print working directory
+        my $cwd = Cwd::getcwd();
+        return "Current directory: $cwd";
 
     } elsif ($cmd eq 'cd') {
         if ($args) {
@@ -747,6 +763,7 @@ sub _show_help {
            "/load <name>          # Load session\n" .
            "/sessions             # List saved sessions\n" .
            "/clear                # Clear current session\n" .
+           "/pwd                  # Show current working directory\n" .
            "/cd [path]            # Change or show current directory\n" .
            "/history [N]          # Show last N entries (chat + commands, default 20)\n" .
            "/history clear        # Clear all history (chat + commands)\n" .
@@ -962,7 +979,7 @@ sub get_available_commands {
     my ($self) = @_;
     return qw(
         /models /model /current /tools /permissions /config
-        /help /save /load /sessions /clear /cd /history /version /exit
+        /help /save /load /sessions /clear /pwd /cd /history /version /exit
     );
 }
 
@@ -1093,6 +1110,9 @@ sub readline_prompt {
         my $term_width = $self->_get_term_width();
         my $term_height = $self->_get_term_height();
 
+        # Store for later use
+        $self->{term_width} = $term_width;
+
         # Disable output buffering
         my $old_fh = select(STDOUT);
         $| = 1;
@@ -1163,7 +1183,16 @@ sub _get_term_width {
         $term_width = $cols if $cols =~ /^\d+$/;
     }
 
+    # Store in instance
+    $self->{term_width} = $term_width;
+
     return $term_width;
+}
+
+sub get_term_width {
+    my ($self) = @_;
+    # Always get fresh terminal width
+    return $self->_get_term_width();
 }
 
 sub _get_term_height {

@@ -4,7 +4,7 @@
 
 ## Project Overview
 
-LocalCode is an ultra-minimal, Perl-based AI coding agent designed for Ollama with **ZERO external dependencies**. Built with Test-Driven Development for maximum reliability and autonomous testing. **Status: Production Ready v1.1.0** with 363 tests passing.
+LocalCode is an ultra-minimal, Perl-based AI coding agent designed for Ollama with **ZERO external dependencies**. Built with Test-Driven Development for maximum reliability and autonomous testing. **Status: Production Ready v1.2.0** with 370+ tests passing.
 
 ## Architecture
 
@@ -27,7 +27,7 @@ localcode/
     ├── bin/              # Main script template (localcode.original)
     ├── lib/              # Perl modules (~1000 lines total)
     │   └── LocalCode/    # All modules (YAML, JSON, HTTP, ReadLine, etc.)
-    └── t/                # Test suite (363 tests in 15 files)
+    └── t/                # Test suite (370+ tests in 16 files)
 ```
 
 **Workflow:**
@@ -51,7 +51,7 @@ make build      # → creates ./localcode in root
 6. **LocalCode::Permissions** (26 tests ✅) - SAFE/DANGEROUS/BLOCKED tool classification
 7. **LocalCode::Session** (20 tests ✅) - JSON-based session persistence with unified history
 8. **LocalCode::Client** (22 tests ✅) - Ollama API client with gpt-oss thinking field support
-9. **LocalCode::Tools** (68 tests ✅) - Tool execution with browser integration
+9. **LocalCode::Tools** (81 tests ✅) - Tool execution with browser integration and permission checking
 10. **LocalCode::UI** (68 tests ✅) - Terminal interface + readline + autocompletion
 
 **Build System:**
@@ -59,12 +59,12 @@ make build      # → creates ./localcode in root
 
 ## Test Coverage
 
-**363 tests passing** - Complete TDD implementation with production-ready features
+**370+ tests passing** - Complete TDD implementation with production-ready features
 
 ```bash
 # Quick Start
 make build                    # Build standalone executable (./localcode)
-./localcode --version         # Test it (shows v1.1.0)
+./localcode --version         # Test it (shows v1.2.0)
 
 # Run tests
 make test                     # All tests (unit + integration)
@@ -125,11 +125,14 @@ perl -c src/lib/LocalCode/*.pm  # Syntax check modules
 
 ### 🤖 Ollama Integration
 
-**Critical Fixes in v1.1.0:**
-- ✅ **Model Detection**: `$client->connect()` called at startup
-- ✅ **Chunked Encoding**: HTTP client properly decodes Ollama responses
-- ✅ **Boolean Fix**: `stream: false` (not `stream: 0`) in API calls
-- ✅ **Unicode Decoding**: `\u003c` → `<` properly decoded
+**Recent Improvements (v1.2.0):**
+- ✅ **Dynamic Context Compression**: Automatically calculates optimal message count
+- ✅ **Context Bar Everywhere**: Display before all AI processing steps
+- ✅ **Directory Commands**: `/pwd` and `/cd` for navigation
+- ✅ **Fixed Bar Width**: Proper terminal width detection
+- ✅ **Enhanced /model**: Shows current + available models
+- ✅ **Permission Checking**: Automatic execution permission validation with detailed English error messages
+- ✅ **Always Allow Option**: Session-based 'a' option for dangerous tools (y/N/a)
 
 **Features:**
 - Auto-detects all available models via `/api/tags`
@@ -160,7 +163,7 @@ perl -c src/lib/LocalCode/*.pm  # Syntax check modules
 - read(file) - Read files safely
 - write(file,content) - Write with permission
 - edit(file,old,new) - Edit with permission
-- bash(cmd) - Execute commands with permission
+- bash(cmd) - Execute commands with permission + automatic permission checking
 - glob(pattern) - Find files
 - grep(pattern,file) - Search in files safely
 - list(path) - List directory contents
@@ -171,6 +174,15 @@ perl -c src/lib/LocalCode/*.pm  # Syntax check modules
 - webfetch(url) - Fetch webpage content
 - task(command) - Execute complex tasks
 - todoread/todowrite - Task management
+
+**Permission Checking (NEW):**
+When bash/exec tools try to execute a local file without execute permission:
+- Automatically detects missing execute permission BEFORE execution
+- Reports detailed error in English with current permissions (rw-r--r--, 0644)
+- Shows file owner, group, and current user information
+- Suggests exact fix: `chmod +x filename`
+- Suggests interpreter alternative: `perl script.pl`, `python script.py`, etc.
+- Based on file extension or shebang line detection
 
 ### 🖥 Enhanced TUI Features
 
@@ -184,8 +196,10 @@ perl -c src/lib/LocalCode/*.pm  # Syntax check modules
 /save <name>          # Save session
 /load <name>          # Load session
 /sessions             # List saved sessions
+/pwd                  # Show current working directory
+/cd [path]            # Change working directory
 /history              # Show unified chat/command history
-/version              # Show LocalCode version (v1.1.0)
+/version              # Show LocalCode version (v1.2.0)
 /clear                # Clear current session
 /help                 # Show help
 /exit                 # Exit LocalCode
@@ -196,8 +210,9 @@ perl -c src/lib/LocalCode/*.pm  # Syntax check modules
 - **Tab completion** - Complete commands and model names
 - **Ctrl+R** - Reverse history search
 - **Persistent readline history** across sessions
-- **Version display** on startup (v1.1.0)
+- **Version display** on startup (v1.2.0)
 - **Graceful Ctrl+D exit** with history saving
+- **Always allow option** - Press 'a' at permission prompt for session-wide approval
 - All standard Emacs/Vi keybindings work!
 
 ## Configuration

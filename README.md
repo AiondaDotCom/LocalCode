@@ -4,7 +4,7 @@ A compact, Perl-based AI coding agent with browser tools and gpt-oss support tha
 
 ![LocalCode Splash Screen](docs/splashscreen.png)
 
-*LocalCode v1.1.0 - Zero dependencies, full-featured AI coding agent with interactive terminal UI.*
+*LocalCode v1.2.0 - Zero dependencies, full-featured AI coding agent with interactive terminal UI.*
 
 ![LocalCode in Action](docs/example.png)
 
@@ -17,10 +17,12 @@ A compact, Perl-based AI coding agent with browser tools and gpt-oss support tha
 ## Features
 
 ### Core Features
-- **Local AI Models**: Works with Ollama including gpt-oss models with thinking field support
+- **Local AI Models**: Works with Ollama including codellama and gpt-oss models with thinking field support
 - **Interactive Terminal UI**: Command-line interface with readline, cursor key navigation, and TAB completion
 - **Context Tracking**: Real-time display of token usage with color-coded warnings (green <70%, yellow 70-89%, red ≥90%)
-- **Auto-Context Management**: Proactive history truncation at 90% usage to prevent context overflow
+- **Smart Context Compression**: AI-powered conversation summarization at 90% usage preserves context while reducing tokens
+- **Dynamic Compression**: Automatically calculates how many messages to compress based on context usage
+- **Auto-Context Management**: Intelligent compression with fallback to truncation if summarization fails
 - **Multiple Tool Execution**: AI can execute multiple tools in sequence for complete workflows
 - **Intelligent Follow-up**: AI analyzes tool results and automatically executes additional tool calls
 - **Tool Execution**: Secure permission-based system for running AI-requested tools
@@ -44,20 +46,24 @@ A compact, Perl-based AI coding agent with browser tools and gpt-oss support tha
 - **Follow-up Execution**: Tool calls in AI follow-up responses are automatically parsed and executed
 - **Smart Autocompletion**: Tab completion for commands and model names with trimming
 - **Enhanced gpt-oss Support**: Optimized prompting and response handling for thinking field models
+- **Execution Permission Checking**: Automatic validation before running scripts with detailed error messages
+- **Always Allow Option**: Session-based permission approval with 'a' option (y/N/a)
 
 ### Technical Excellence
-- **Test-Driven Development**: 363+ comprehensive tests ensuring reliability
+- **Test-Driven Development**: 370+ comprehensive tests ensuring reliability
 - **Zero Dependencies**: Pure Perl with only core modules - no external CPAN dependencies
-- **Smart Context Management**: Real-time monitoring with proactive truncation at 90% and reactive fallback on errors
+- **Smart Context Management**: AI-powered compression at 90%, with proactive monitoring and reactive fallback
+- **Context Compression**: Automatically summarizes old conversations to preserve context while reducing token usage
 - **Visual Context Bar**: Integrated status bar showing `───[ Context: 18% (770/4096) ]` before each prompt
 - **Robust Error Handling**: AI can analyze tool failures and suggest fixes automatically
+- **Permission Checking**: Automatic execution permission validation with detailed error reporting in English
 
 ## Requirements
 
 **ZERO External Dependencies!**
 
 - Perl 5.10+ (with core modules only)
-- Ollama running locally (supports gpt-oss models)
+- Ollama running locally (codellama, llama2, gpt-oss, or other models)
 
 All required functionality is built-in:
 - ✅ JSON parser/encoder
@@ -143,6 +149,8 @@ localcode  # If installed via make install
 - `/save <name>` - Save current session
 - `/load <name>` - Load saved session
 - `/sessions` - List saved sessions
+- `/pwd` - Show current working directory
+- `/cd [path]` - Change working directory or show current directory
 - `/history` - Show unified chat and command history
 - `/version` - Show LocalCode version
 - `/clear` - Clear current session
@@ -162,7 +170,7 @@ LocalCode includes 18 built-in tools that the AI can use:
 - **patch** - Apply patches to files (requires permission)
 
 #### System Operations
-- **bash/exec** - Execute shell commands (requires permission)
+- **bash/exec** - Execute shell commands (requires permission, with automatic permission checking)
 - **search/grep** - Search for patterns in files
 - **task** - Execute complex multi-step tasks (requires permission)
 
@@ -182,7 +190,18 @@ LocalCode includes 18 built-in tools that the AI can use:
 Tools are classified into three categories:
 - **SAFE**: Auto-approved (read, grep, list, glob, webfetch, websearch, webopen, webfind, webget, todoread)
 - **DANGEROUS**: Requires user approval (bash, write, edit, patch, task, todowrite)
+  - Permission prompt: `Allow? (y/N/a)` where 'a' = always allow for this session
 - **BLOCKED**: Not allowed (none by default)
+
+**Execution Permission Checking:**
+When bash/exec tools attempt to run a local file:
+- Automatically checks for execute permission BEFORE execution
+- Reports detailed error in English if permission denied:
+  - Current file permissions (rw-r--r--, 0644)
+  - File owner, group, and current user
+  - Exact fix suggestion: `chmod +x filename`
+  - Alternative: Run with interpreter (perl, python, bash, etc.)
+  - Smart interpreter detection based on file extension or shebang
 
 ### CLI Usage
 

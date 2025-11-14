@@ -224,15 +224,156 @@ sub _tool_write {
 
 sub _tool_exec {
     my ($command) = @_;
-    
+
+    # Check execution permissions before attempting to run
+    # Parse command to extract the file being executed
+    my $file_to_execute;
+
+    # Handle different command patterns:
+    # - ./script.pl
+    # - perl script.pl
+    # - /path/to/script
+    # - script (in PATH)
+
+    if ($command =~ /^\s*\.\/(\S+)/) {
+        # Relative path execution: ./script.pl
+        $file_to_execute = "./$1";
+    } elsif ($command =~ /^\s*(\S+)/) {
+        # Extract first word/token which might be a file or command
+        my $cmd_token = $1;
+
+        # If it looks like a path (contains / or has file extension) and exists as a file
+        if (($cmd_token =~ /\// || $cmd_token =~ /\.\w+$/) && -f $cmd_token) {
+            $file_to_execute = $cmd_token;
+        }
+        # Check for interpreter patterns like "perl script.pl"
+        elsif ($command =~ /^\s*(?:perl|python|ruby|bash|sh|node)\s+(\S+)/) {
+            $file_to_execute = $1 if -f $1;
+        }
+        # Check if it's just a local file without path separator
+        elsif (-f $cmd_token) {
+            $file_to_execute = $cmd_token;
+        }
+        # Otherwise let it proceed (might be in PATH or will fail naturally)
+    }
+
+    # If we identified a local file to execute, check its permissions
+    if ($file_to_execute && -f $file_to_execute) {
+        # Check if file is executable
+        unless (-x $file_to_execute) {
+            # Get detailed file permissions
+            my @stat_info = stat($file_to_execute);
+            my $mode = $stat_info[2];
+            my $uid = $stat_info[4];
+            my $gid = $stat_info[5];
+
+            # Format permissions in readable format (e.g., rw-r--r--)
+            my $perms = sprintf("%04o", $mode & 07777);  # Octal permissions
+            my $readable_perms = '';
+
+            # Convert to rwx format
+            my $octal = $mode & 0777;
+            for my $i (0..2) {
+                my $shift = (2 - $i) * 3;
+                my $bits = ($octal >> $shift) & 7;
+                $readable_perms .= ($bits & 4) ? 'r' : '-';
+                $readable_perms .= ($bits & 2) ? 'w' : '-';
+                $readable_perms .= ($bits & 1) ? 'x' : '-';
+            }
+
+            # Get current user info
+            my $current_uid = $<;
+            my $current_user = getpwuid($current_uid) || $current_uid;
+            my $file_owner = getpwuid($uid) || $uid;
+            my $file_group = getgrgid($gid) || $gid;
+
+            # Build detailed error message in English
+            my $error_msg = "EXECUTION DENIED: File '$file_to_execute' does not have execute permission.\n\n";
+            $error_msg .= "Current permissions: $readable_perms ($perms in octal)\n";
+            $error_msg .= "File owner: $file_owner (uid: $uid)\n";
+            $error_msg .= "File group: $file_group (gid: $gid)\n";
+            $error_msg .= "Current user: $current_user (uid: $current_uid)\n\n";
+            $error_msg .= "To fix this, you need to add execute permission. Suggested fix:\n";
+            $error_msg .= "  chmod +x $file_to_execute\n\n";
+            $error_msg .= "Alternative: Run the file with an interpreter:\n";
+
+            # Suggest appropriate interpreter based on file extension or shebang
+            if ($file_to_execute =~ /\.pl$/) {
+                $error_msg .= "  perl $file_to_execute";
+            } elsif ($file_to_execute =~ /\.py$/) {
+                $error_msg .= "  python $file_to_execute";
+            } elsif ($file_to_execute =~ /\.rb$/) {
+                $error_msg .= "  ruby $file_to_execute";
+            } elsif ($file_to_execute =~ /\.sh$/) {
+                $error_msg .= "  bash $file_to_execute";
+            } elsif ($file_to_execute =~ /\.js$/) {
+                $error_msg .= "  node $file_to_execute";
+            } else {
+                # Try to detect shebang
+                if (open my $fh, '<', $file_to_execute) {
+                    my $first_line = <$fh>;
+                    close $fh;
+                    if ($first_line && $first_line =~ /^#!\s*(\S+)/) {
+                        my $interpreter = $1;
+                        $error_msg .= "  $interpreter $file_to_execute (based on shebang)";
+                    } else {
+                        $error_msg .= "  bash $file_to_execute (or appropriate interpreter)";
+                    }
+                }
+            }
+
+            return {
+                success => 0,
+                message => "File lacks execute permission",
+                error => $error_msg,
+                output => $error_msg
+            };
+        }
+    }
+
     my $output = `$command 2>&1`;
-    my $exit_code = $? >> 8;
-    
+    my $status = $?;
+
+    # Proper exit code extraction
+    my $exit_code = 0;
+    if ($status == -1) {
+        # Failed to execute
+        return {
+            success => 0,
+            message => "Failed to execute command",
+            error => "Failed to execute: $!",
+            output => $output
+        };
+    } elsif ($status & 127) {
+        # Died with signal
+        my $signal = $status & 127;
+        return {
+            success => 0,
+            message => "Command died with signal $signal",
+            error => "Died with signal $signal",
+            output => $output,
+            exit_code => 128 + $signal
+        };
+    } else {
+        # Normal exit
+        $exit_code = $status >> 8;
+    }
+
+    # Build detailed error message if command failed
+    my $message = $exit_code == 0 ? "Command executed successfully" : "Command failed with exit code $exit_code";
+
+    # If there's output and command failed, include it in the error
+    if ($exit_code != 0 && $output) {
+        chomp $output;
+        $message = "Command failed: $output";
+    }
+
     return {
         success => $exit_code == 0,
-        message => $exit_code == 0 ? "Command executed successfully" : "Command failed with exit code $exit_code",
+        message => $message,
         output => $output,
-        exit_code => $exit_code
+        exit_code => $exit_code,
+        error => $exit_code != 0 ? $output : undef
     };
 }
 

@@ -59,19 +59,29 @@ $result = $ui->handle_slash_command('/sessions', $session);
 like($result, qr/integration_session/, 'Session listing includes saved session');
 
 # Test complete workflow: tool execution with permissions
-my $prompt = 'I need to <tool_call name="read" args={"filePath": "/tmp/test.txt"}> and then <tool_call name="write" args={"filePath": "/tmp/output.txt", "content": "processed content"}>';
+# Create test file first
+my $test_file = "/tmp/test_integration_$$.txt";
+open my $tfh, '>', $test_file or die "Cannot create test file: $!";
+print $tfh "test content\n";
+close $tfh;
+
+my $prompt = qq{I need to <tool_call name="read" args={"filePath": "$test_file"}> and then <tool_call name="write" args={"filePath": "/tmp/output_$$.txt", "content": "processed content"}>};
 my $injected = $ui->inject_system_prompt($prompt);
 like($injected, qr/You are a bot/, 'System prompt injection works');
 
 my @tool_calls = $ui->parse_tool_calls($prompt);
 is(scalar @tool_calls, 2, 'Tool calls parsed correctly');
 
-# Execute tools through permission system  
+# Execute tools through permission system
 $tools->{auto_approve} = 1; # Auto-approve for testing
 foreach my $tool_call (@tool_calls) {
     my $tool_result = $tools->execute_tool($tool_call->{name}, $tool_call->{args});
     ok($tool_result->{success}, "Tool $tool_call->{name} executed successfully");
 }
+
+# Cleanup
+unlink $test_file;
+unlink "/tmp/output_$$.txt";
 
 # Test chat flow with tool integration
 my $chat_response = $client->chat($injected);

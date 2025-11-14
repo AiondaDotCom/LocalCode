@@ -85,7 +85,7 @@ $tools->{mock_execution} = 0;
 $tools->{simulate_only} = 0;
 
 # Test glob tool
-$result = $tools->execute_tool('glob', ['*.t', 't']);
+$result = $tools->execute_tool('glob', ['*.t', 'src/t']);
 ok($result->{success}, 'Glob tool executed');
 like($result->{message} || '', qr/Found \d+ matches|matches/, 'Glob found matches');
 

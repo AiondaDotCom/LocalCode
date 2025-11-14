@@ -2,11 +2,15 @@
 
 A compact, Perl-based AI coding agent with browser tools and gpt-oss support that provides an interactive terminal interface for AI-assisted programming tasks using local Ollama models.
 
-![LocalCode in Action](example.png)
+![LocalCode Splash Screen](docs/splashscreen.png)
+
+*LocalCode v1.1.0 - Zero dependencies, full-featured AI coding agent with interactive terminal UI.*
+
+![LocalCode in Action](docs/example.png)
 
 *LocalCode executing multiple tool calls in sequence: creating a Perl calculator, making it executable, and testing it - all from a single AI prompt.*
 
-![GPT-OSS Advanced Example](gpt-oss_120b.png)
+![GPT-OSS Advanced Example](docs/gpt-oss_120b.png)
 
 *Using the open-source GPT-OSS:120b model from OpenAI, LocalCode can create sophisticated web applications locally. This example shows the AI creating a complete calculator web app with HTML, CSS, and JavaScript from a single prompt "Create a calculator as web app."*
 
@@ -15,10 +19,11 @@ A compact, Perl-based AI coding agent with browser tools and gpt-oss support tha
 ### Core Features
 - **Local AI Models**: Works with Ollama including gpt-oss models with thinking field support
 - **Interactive Terminal UI**: Command-line interface with readline, cursor key navigation, and TAB completion
+- **Context Tracking**: Real-time display of token usage with color-coded warnings (green <70%, yellow 70-89%, red ≥90%)
+- **Auto-Context Management**: Proactive history truncation at 90% usage to prevent context overflow
 - **Multiple Tool Execution**: AI can execute multiple tools in sequence for complete workflows
 - **Intelligent Follow-up**: AI analyzes tool results and automatically executes additional tool calls
 - **Tool Execution**: Secure permission-based system for running AI-requested tools
-- **Version Display**: Shows LocalCode v1.0.0 on startup with `--version` flag
 
 ### Browser Integration
 - **Web Search**: DuckDuckGo integration with `websearch(query)` tool  
@@ -41,22 +46,27 @@ A compact, Perl-based AI coding agent with browser tools and gpt-oss support tha
 - **Enhanced gpt-oss Support**: Optimized prompting and response handling for thinking field models
 
 ### Technical Excellence
-- **Test-Driven Development**: 316+ comprehensive tests ensuring reliability
-- **Ultra-Compact**: ~1000 lines of Perl code for minimal LLM context usage
-- **Smart Context Management**: Automatic history truncation when context limits exceeded
+- **Test-Driven Development**: 363+ comprehensive tests ensuring reliability
+- **Zero Dependencies**: Pure Perl with only core modules - no external CPAN dependencies
+- **Smart Context Management**: Real-time monitoring with proactive truncation at 90% and reactive fallback on errors
+- **Visual Context Bar**: Integrated status bar showing `───[ Context: 18% (770/4096) ]` before each prompt
 - **Robust Error Handling**: AI can analyze tool failures and suggest fixes automatically
 
 ## Requirements
 
-- Perl 5.10+
+**ZERO External Dependencies!**
+
+- Perl 5.10+ (with core modules only)
 - Ollama running locally (supports gpt-oss models)
-- Term::ReadLine::Gnu (for readline and command history)
-- YAML::Tiny (for configuration)
-- JSON (for session management and API communication)
-- LWP::UserAgent (for Ollama API communication)
-- curl (for modern SSL-compatible web tools)
-- URI::Escape (for web search URL encoding)
-- File::Spec, File::Path (for file operations and ~/.localcode management)
+
+All required functionality is built-in:
+- ✅ JSON parser/encoder
+- ✅ YAML config reader
+- ✅ HTTP client (for Ollama API)
+- ✅ Basic readline with history
+- ✅ URL encoding
+
+Only uses Perl core modules: `File::Spec`, `File::Path`, `Socket`, `IO::Socket::INET`, `Getopt::Long`
 
 ## Installation
 
@@ -68,18 +78,20 @@ git clone <repository-url>
 cd localcode
 ```
 
-2. Install Perl dependencies:
+2. Build and run (no dependencies to install!):
 ```bash
-cpan YAML::Tiny JSON LWP::UserAgent URI::Escape Term::ReadLine::Gnu File::Path
+make build
+./localcode --version
 ```
 
-3. Build and install:
+The project uses a modular development structure that builds into a single standalone executable:
+- `src/` contains development code (modules, tests, build script)
+- `src/build.pl` creates a single-file executable
+- `localcode` is the ready-to-use standalone binary in the root directory
+
+3. (Optional) Install to your ~/bin:
 ```bash
 make install
-```
-
-This creates a single-file distribution and installs it to `~/bin/localcode`. Add `~/bin` to your PATH:
-```bash
 export PATH=$PATH:$HOME/bin
 ```
 
@@ -88,13 +100,27 @@ export PATH=$PATH:$HOME/bin
 ollama serve
 ```
 
-### Development Install
+### Development Structure
 
-For development work, you can run directly from the source:
-```bash
-chmod +x bin/localcode
-./bin/localcode
+The project separates development and distribution:
 ```
+localcode/
+├── localcode            # Standalone executable (built by 'make build', git-ignored)
+├── Makefile             # Build system
+├── README.md            # This documentation
+├── CLAUDE.md            # Developer documentation
+├── LICENSE              # License file
+├── config/              # Configuration files
+│   └── default.yaml
+├── docs/                # Documentation and screenshots
+└── src/                 # Development source code
+    ├── build.pl         # Build script that inlines all modules
+    ├── lib/             # Perl modules (Config, Client, Tools, UI, etc.)
+    ├── bin/             # Original script template
+    └── t/               # Test suite (363+ tests)
+```
+
+After cloning, just run `make build` to create the standalone executable `localcode` in the root directory.
 
 ## Usage
 
@@ -104,7 +130,7 @@ Start the interactive terminal:
 ```bash
 localcode  # If installed via make install
 # or
-./bin/localcode  # If running from source
+./localcode  # If running from source directory
 ```
 
 ### Available Slash Commands
@@ -298,14 +324,14 @@ The project follows Test-Driven Development (TDD) methodology with:
 - **lib/LocalCode/Client.pm** - Ollama API client with gpt-oss thinking field support
 - **lib/LocalCode/Tools.pm** - Tool execution system with browser integration
 - **lib/LocalCode/UI.pm** - Terminal interface with readline and autocompletion
-- **bin/localcode** - Main executable with version display (v1.0.0)
+- **bin/localcode** - Main executable with version display (v1.1.0)
 
 ## Architecture
 
 LocalCode is designed to be:
 - **Maintainable**: Pure Perl with minimal dependencies
 - **Secure**: Permission-based tool execution with SSL bypass for web tools
-- **Efficient**: Compact codebase (~1000 lines) to minimize LLM context
+- **Efficient**: Compact and optimized codebase with zero external dependencies
 - **Robust**: Handles complex AI-generated content with embedded quotes and incomplete tool calls
 - **Local-First**: Works with local Ollama while providing web search capabilities
 - **User-Friendly**: Tab completion, cursor key navigation, persistent history

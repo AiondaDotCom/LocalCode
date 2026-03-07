@@ -555,6 +555,7 @@ LocalCode v${this.config.getVersion()} - Commands:
       // Agentic loop: keep executing tools until model gives pure text
       let currentTools: typeof tools | undefined = tools;
       let maxRounds = 10;
+      const recentCommands: string[] = [];
 
       while (maxRounds-- > 0) {
         const currentMessages = this.session.getMessagesForChat(systemPrompt);
@@ -577,6 +578,17 @@ LocalCode v${this.config.getVersion()} - Commands:
           this.session.addMessage("assistant", content);
           break;
         }
+
+        // Loop detection: check if the same commands are being repeated
+        const callKey = toolCalls.map((c) => `${c.name}:${JSON.stringify(c.arguments)}`).join("|");
+        if (recentCommands.includes(callKey)) {
+          console.log(`\n\x1b[33m[loop detected — same command repeated, stopping]\x1b[0m`);
+          process.stdout.write("\n");
+          this.showGenerationStats(response);
+          this.session.addMessage("assistant", content);
+          break;
+        }
+        recentCommands.push(callKey);
 
         // Tool calls detected
         if (content.trim() !== "") {

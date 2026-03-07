@@ -115,16 +115,18 @@ async function main(): Promise<void> {
       }
     });
 
-  // MCP subcommand
+  // MCP subcommand — parse raw argv to avoid Commander eating flags like --command
   program
     .command("mcp")
     .description("Manage MCP servers")
     .allowUnknownOption()
     .allowExcessArguments()
-    .action((_opts: unknown, cmd: Command) => {
+    .action(() => {
       const config = new Config();
       const registry = new MCPRegistry(config.getLocalcodeDir());
-      const args = cmd.args;
+      // Extract args after "mcp" from raw process.argv
+      const mcpIdx = process.argv.indexOf("mcp");
+      const args = mcpIdx >= 0 ? process.argv.slice(mcpIdx + 1) : [];
       const parsed = parseMCPArgs(args);
 
       if (parsed === null) {

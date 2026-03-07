@@ -312,6 +312,7 @@ export class Client {
           let contentParts: string[] = [];
           let toolCallParts: Array<{ name: string; arguments: string }> = [];
           let buffer = "";
+          let tokenCount = 0;
 
           res.on("data", (chunk: Buffer) => {
             buffer += chunk.toString("utf-8");
@@ -339,6 +340,7 @@ export class Client {
                 const delta = parsed.choices?.[0]?.delta;
                 if (delta?.content) {
                   contentParts.push(delta.content);
+                  tokenCount++;
                   if (onToken) onToken(delta.content);
                 }
                 if (delta?.tool_calls) {
@@ -380,8 +382,12 @@ export class Client {
               : undefined;
 
             const elapsed = Date.now() - startTime;
-            const tps = this.completionTokens > 0 && elapsed > 0
-              ? Math.round((this.completionTokens / elapsed) * 1000 * 10) / 10
+            const tokens = this.completionTokens > 0 ? this.completionTokens : tokenCount;
+            if (tokenCount > 0 && this.completionTokens === 0) {
+              this.completionTokens = tokenCount;
+            }
+            const tps = tokens > 0 && elapsed > 0
+              ? Math.round((tokens / elapsed) * 1000 * 10) / 10
               : undefined;
 
             resolve({

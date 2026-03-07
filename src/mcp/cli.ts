@@ -20,7 +20,7 @@ export function parseMCPArgs(argv: string[]): MCPCLIArgs | null {
   switch (command) {
     case "add": {
       result.name = argv[1];
-      result.scope = "local";
+      result.scope = "user";
       result.transport = "stdio";
       result.env = {};
 
@@ -56,7 +56,7 @@ export function parseMCPArgs(argv: string[]): MCPCLIArgs | null {
     case "add-json": {
       result.name = argv[1];
       result.json = argv[2];
-      result.scope = "local";
+      result.scope = "user";
 
       for (let i = 3; i < argv.length; i++) {
         const arg = argv[i];
@@ -70,7 +70,7 @@ export function parseMCPArgs(argv: string[]): MCPCLIArgs | null {
 
     case "remove": {
       result.name = argv[1];
-      result.scope = "local";
+      result.scope = "user";
 
       for (let i = 2; i < argv.length; i++) {
         const arg = argv[i];

@@ -27,7 +27,7 @@ export function createMCPTools(
       handler: async (args) => {
         const name = args["name"] ?? "";
         const command = args["command"] ?? "";
-        const scope = (args["scope"] ?? "local") as MCPScope;
+        const scope = (args["scope"] ?? "user") as MCPScope;
 
         if (name === "" || command === "") {
           return { tool: "mcp_add", success: false, output: "name and command are required" };
@@ -87,7 +87,7 @@ export function createMCPTools(
       handler: async (args) => {
         const name = args["name"] ?? "";
         const configJson = args["config"] ?? "";
-        const scope = (args["scope"] ?? "local") as MCPScope;
+        const scope = (args["scope"] ?? "user") as MCPScope;
 
         if (name === "" || configJson === "") {
           return { tool: "mcp_add_json", success: false, output: "name and config are required" };
@@ -135,7 +135,7 @@ export function createMCPTools(
       permissionLevel: "dangerous",
       handler: async (args) => {
         const name = args["name"] ?? "";
-        const scope = (args["scope"] ?? "local") as MCPScope;
+        const scope = (args["scope"] ?? "user") as MCPScope;
 
         if (name === "") {
           return { tool: "mcp_remove", success: false, output: "name is required" };

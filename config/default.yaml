@@ -6,7 +6,7 @@ mlx:
   default_model: "nightmedia/Qwen3.5-35B-A3B-Text-qx64-hi-mlx"
   current_model: null
   timeout: 300
-  context_window: 32768
+  context_window: 131072
   max_tokens: 8192
 
 ollama:

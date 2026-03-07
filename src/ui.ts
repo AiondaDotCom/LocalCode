@@ -179,7 +179,11 @@ export class UI {
     const resolved = this.mcpManager.resolveToolCall(call.name);
 
     if (resolved !== null && resolved.serverName !== "local") {
-      // External MCP tool
+      // External MCP tool — show parameters before permission prompt
+      const argsDisplay = Object.entries(call.arguments)
+        .map(([k, v]) => `${k}=${typeof v === "string" && v.length > 80 ? `${v.slice(0, 80)}...` : String(v)}`)
+        .join(", ");
+      console.log(`\x1b[90m  → ${resolved.serverName}.${resolved.toolName}(${argsDisplay})\x1b[0m`);
       const allowed = await this.permissions.requestPermission(
         "shell_exec",
         `MCP: ${call.name}`,

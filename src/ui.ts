@@ -141,17 +141,34 @@ export class UI {
 
   private extractBashBlocks(content: string): ToolCall[] {
     const calls: ToolCall[] = [];
-    const blockRegex = /```(?:bash|sh)\s*\n([\s\S]*?)```/g;
+    // Match ```bash, ```sh, or ```shell blocks (flexible whitespace)
+    const blockRegex = /`{3,}\s*(?:bash|sh|shell)\s*\r?\n([\s\S]*?)`{3,}/g;
     let match;
     while ((match = blockRegex.exec(content)) !== null) {
       const block = match[1] ?? "";
-      for (const line of block.split("\n")) {
-        const cmd = line.trim();
+      for (const raw of block.split(/\r?\n/)) {
+        const cmd = raw.trim();
         if (cmd !== "" && !cmd.startsWith("#")) {
           calls.push({
             name: "mcp__local__bash",
             arguments: { command: cmd },
           });
+        }
+      }
+    }
+    // Fallback: detect standalone command lines like "$ cmd" or "> cmd"
+    if (calls.length === 0) {
+      const lines = content.split(/\r?\n/);
+      for (const line of lines) {
+        const m = /^\s*[\$>]\s+(.+)$/.exec(line);
+        if (m !== null) {
+          const cmd = (m[1] ?? "").trim();
+          if (cmd !== "") {
+            calls.push({
+              name: "mcp__local__bash",
+              arguments: { command: cmd },
+            });
+          }
         }
       }
     }
@@ -530,20 +547,34 @@ LocalCode v${this.config.getVersion()} - Commands:
       const onToken = (token: string): void => {
         process.stdout.write(token);
       };
-      const response = await this.client.chat(messages, undefined, tools, onToken);
-      const content = response.message.content;
-      let toolCalls = response.message.tool_calls ?? this.parseToolCalls(content);
 
-      // Detect ```bash/```sh code blocks and convert to bash tool calls
-      if (toolCalls.length === 0) {
-        toolCalls = this.extractBashBlocks(content);
-        if (toolCalls.length > 0) {
-          console.log(`\n\x1b[33m[auto-executing ${String(toolCalls.length)} command${toolCalls.length > 1 ? "s" : ""} from code block]\x1b[0m`);
+      // Agentic loop: keep executing tools until model gives pure text
+      let currentTools: typeof tools | undefined = tools;
+      let maxRounds = 10;
+
+      while (maxRounds-- > 0) {
+        const currentMessages = this.session.getMessagesForChat(systemPrompt);
+        const response = await this.client.chat(currentMessages, undefined, currentTools, onToken);
+        const content = response.message.content;
+        let toolCalls = response.message.tool_calls ?? this.parseToolCalls(content);
+
+        // Detect ```bash/```sh code blocks and convert to bash tool calls
+        if (toolCalls.length === 0) {
+          toolCalls = this.extractBashBlocks(content);
+          if (toolCalls.length > 0) {
+            console.log(`\n\x1b[33m[auto-executing ${String(toolCalls.length)} command${toolCalls.length > 1 ? "s" : ""} from code block]\x1b[0m`);
+          }
         }
-      }
 
-      if (toolCalls.length > 0) {
-        // Tool calls detected — content was already streamed
+        if (toolCalls.length === 0) {
+          // Pure text response — done
+          process.stdout.write("\n");
+          this.showGenerationStats(response);
+          this.session.addMessage("assistant", content);
+          break;
+        }
+
+        // Tool calls detected
         if (content.trim() !== "") {
           process.stdout.write("\n");
         }
@@ -561,18 +592,8 @@ LocalCode v${this.config.getVersion()} - Commands:
         this.session.addMessage("assistant", content);
         this.session.addMessage("tool", resultText);
 
-        // Send results back to LLM for summary (no tools — prevent duplicate calls)
-        const followupMessages = this.session.getMessagesForChat(systemPrompt);
-        const followup = await this.client.chat(followupMessages, undefined, undefined, onToken);
-        const followupContent = followup.message.content;
-        process.stdout.write("\n");
-        this.showGenerationStats(followup);
-        this.session.addMessage("assistant", followupContent);
-      } else {
-        // Pure text response — already streamed
-        process.stdout.write("\n");
-        this.showGenerationStats(response);
-        this.session.addMessage("assistant", content);
+        // Next round: send without tools to prevent duplicate calls
+        currentTools = undefined;
       }
     } catch (err: unknown) {
       const msg = err instanceof Error ? `${err.message}\n${err.stack ?? ""}` : String(err);

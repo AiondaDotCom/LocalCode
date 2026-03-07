@@ -6,6 +6,7 @@ import type { Session } from "./session.js";
 import type { Permissions } from "./permissions.js";
 import type { Config } from "./config.js";
 import type { MCPManager } from "./mcp/manager.js";
+import type { MCPRegistry } from "./mcp/registry.js";
 import type { ToolCall, ToolResult, MCPToolInfo, ChatResponse, Message } from "./types.js";
 import {
   getLocalTools,
@@ -13,6 +14,8 @@ import {
   executeLocalTool,
 } from "./mcp/servers/local.js";
 import { loadContextFiles, buildContextPrompt } from "./context.js";
+import { createMCPTools } from "./tools/mcp.js";
+import type { LocalTool } from "./mcp/servers/local.js";
 
 export class UI {
   private client: Client;
@@ -20,6 +23,7 @@ export class UI {
   private permissions: Permissions;
   private config: Config;
   private mcpManager: MCPManager;
+  private mcpTools: LocalTool[];
   private rl: readline.Interface | null = null;
   private running = false;
 
@@ -29,12 +33,14 @@ export class UI {
     permissions: Permissions,
     config: Config,
     mcpManager: MCPManager,
+    mcpRegistry: MCPRegistry,
   ) {
     this.client = client;
     this.session = session;
     this.permissions = permissions;
     this.config = config;
     this.mcpManager = mcpManager;
+    this.mcpTools = createMCPTools(mcpRegistry, mcpManager);
   }
 
   buildSystemPrompt(): string {
@@ -55,6 +61,9 @@ export class UI {
       "- To search files: use `grep` (content) or `glob` (filenames)",
       "- To list directories: use the `list` tool",
       "- To fetch a URL and read its content: use the `webfetch` tool with url",
+      "- To add MCP servers: use `mcp_add` with name and command (tools become available instantly)",
+      "- To remove MCP servers: use `mcp_remove` with name",
+      "- To list MCP servers and their tools: use `mcp_list`",
       "",
       "When the user gives you a URL, FIRST use `webfetch` to read its content (e.g. README, docs).",
       "When the user asks you to install or clone something, use the `bash` tool with git clone, npm install, etc.",
@@ -75,6 +84,14 @@ export class UI {
 
     return [
       ...localTools.map((t) => ({
+        type: "function" as const,
+        function: {
+          name: `mcp__local__${t.name}`,
+          description: t.description,
+          parameters: t.inputSchema,
+        },
+      })),
+      ...this.mcpTools.map((t) => ({
         type: "function" as const,
         function: {
           name: `mcp__local__${t.name}`,
@@ -144,8 +161,24 @@ export class UI {
       }
     }
 
-    // Local tool
+    // Local tool (built-in or MCP management)
     const toolName = resolved?.toolName ?? call.name;
+
+    // Check if it's an MCP management tool
+    const mcpTool = this.mcpTools.find((t) => t.name === toolName);
+    if (mcpTool !== undefined) {
+      if (mcpTool.permissionLevel === "dangerous") {
+        const allowed = await this.permissions.requestPermission(
+          "shell_exec",
+          `${toolName}: ${JSON.stringify(call.arguments)}`,
+        );
+        if (!allowed) {
+          return { tool: toolName, success: false, output: "Permission denied" };
+        }
+      }
+      return await mcpTool.handler(call.arguments);
+    }
+
     const permission = getLocalToolPermission(toolName);
 
     if (permission === "dangerous") {
@@ -167,7 +200,7 @@ export class UI {
       }
     }
 
-    return executeLocalTool(toolName, call.arguments);
+    return await executeLocalTool(toolName, call.arguments);
   }
 
   formatToolResults(results: ToolResult[]): string {

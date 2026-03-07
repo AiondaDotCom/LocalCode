@@ -102,7 +102,7 @@ async function main(): Promise<void> {
         // MCP failures are non-fatal
       }
 
-      const ui = new UI(client, session, permissions, config, mcpManager);
+      const ui = new UI(client, session, permissions, config, mcpManager, registry);
 
       if (prompt !== undefined && prompt !== "") {
         // One-shot mode

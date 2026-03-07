@@ -268,23 +268,21 @@ export class UI {
     try {
       const parsed = JSON.parse(output) as unknown;
 
-      // Handle arrays (e.g. listKnownHosts) — summarize
+      // Handle arrays (e.g. listKnownHosts) — compact summary
       if (Array.isArray(parsed)) {
         const items = parsed as Array<Record<string, unknown>>;
-        if (items.length <= 20) {
-          // Short array — compact single-line per item
-          const lines = items.map((item) => {
-            const key = item["hostname"] ?? item["name"] ?? item["host"] ?? item["alias"] ?? "";
-            const src = item["source"] ?? item["scope"] ?? "";
-            if (key !== "") return src ? `${String(key)} (${String(src)})` : String(key);
-            return JSON.stringify(item);
-          });
+        const summarize = (item: Record<string, unknown>): string => {
+          const alias = item["alias"] ?? "";
+          const host = item["hostname"] ?? item["name"] ?? item["host"] ?? "";
+          const src = item["source"] ?? "";
+          const label = alias !== "" ? String(alias) : String(host);
+          return src ? `${label} (${String(src)})` : label;
+        };
+        const lines = items.map(summarize);
+        if (items.length <= 30) {
           return `${String(items.length)} items: ${lines.join(", ")}`;
         }
-        // Large array — show count + first/last few
-        const first = items.slice(0, 5).map((i) => JSON.stringify(i)).join(", ");
-        const last = items.slice(-3).map((i) => JSON.stringify(i)).join(", ");
-        return `${String(items.length)} items: [${first}, ... ${last}]`;
+        return `${String(items.length)} items: ${lines.slice(0, 15).join(", ")}, ... ${lines.slice(-5).join(", ")}`;
       }
 
       // Handle objects with stdout/stderr/code

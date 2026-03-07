@@ -78,6 +78,9 @@ export class UI {
       "When the user asks you to create a program, use the `write` tool.",
       "When the user asks you to run something, use the `bash` tool.",
       "NEVER show code as text. ALWAYS execute it via tools.",
+      "NEVER fabricate, guess, or hallucinate tool results. You MUST call the tool for EACH item separately.",
+      "If asked to check multiple servers/files/items, call the tool once for EACH one. Do NOT skip any.",
+      "Only report results you actually received from tool calls.",
       "",
       contextPrompt,
     ].join("\n");

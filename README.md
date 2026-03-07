@@ -4,6 +4,10 @@ AI coding agent for local LLMs. Built for macOS with MLX backend support.
 
 LocalCode connects to a local LLM (MLX or Ollama), provides coding tools (file read/write, shell exec, web search), and uses native tool calling to act as a fully autonomous coding assistant — similar to Claude Code, but running entirely on your hardware.
 
+![LocalCode Startup](docs/start.png)
+
+![LocalCode in Action](docs/result.png)
+
 ## Features
 
 - **Streaming responses** — live token-by-token output, no waiting

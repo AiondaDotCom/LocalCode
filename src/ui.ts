@@ -139,6 +139,25 @@ export class UI {
     return calls;
   }
 
+  private extractBashBlocks(content: string): ToolCall[] {
+    const calls: ToolCall[] = [];
+    const blockRegex = /```(?:bash|sh)\s*\n([\s\S]*?)```/g;
+    let match;
+    while ((match = blockRegex.exec(content)) !== null) {
+      const block = match[1] ?? "";
+      for (const line of block.split("\n")) {
+        const cmd = line.trim();
+        if (cmd !== "" && !cmd.startsWith("#")) {
+          calls.push({
+            name: "mcp__local__bash",
+            arguments: { command: cmd },
+          });
+        }
+      }
+    }
+    return calls;
+  }
+
   async executeTool(call: ToolCall): Promise<ToolResult> {
     const resolved = this.mcpManager.resolveToolCall(call.name);
 
@@ -513,7 +532,15 @@ LocalCode v${this.config.getVersion()} - Commands:
       };
       const response = await this.client.chat(messages, undefined, tools, onToken);
       const content = response.message.content;
-      const toolCalls = response.message.tool_calls ?? this.parseToolCalls(content);
+      let toolCalls = response.message.tool_calls ?? this.parseToolCalls(content);
+
+      // Detect ```bash/```sh code blocks and convert to bash tool calls
+      if (toolCalls.length === 0) {
+        toolCalls = this.extractBashBlocks(content);
+        if (toolCalls.length > 0) {
+          console.log(`\n\x1b[33m[auto-executing ${String(toolCalls.length)} command${toolCalls.length > 1 ? "s" : ""} from code block]\x1b[0m`);
+        }
+      }
 
       if (toolCalls.length > 0) {
         // Tool calls detected — content was already streamed

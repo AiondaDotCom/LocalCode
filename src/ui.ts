@@ -6,7 +6,7 @@ import type { Session } from "./session.js";
 import type { Permissions } from "./permissions.js";
 import type { Config } from "./config.js";
 import type { MCPManager } from "./mcp/manager.js";
-import type { ToolCall, ToolResult, MCPToolInfo } from "./types.js";
+import type { ToolCall, ToolResult, MCPToolInfo, ChatResponse } from "./types.js";
 import {
   getLocalTools,
   getLocalToolPermission,
@@ -362,6 +362,24 @@ LocalCode v${this.config.getVersion()} - Commands:
     }
   }
 
+  private showGenerationStats(response: ChatResponse): void {
+    const parts: string[] = [];
+    if (response.tokens_per_second !== undefined) {
+      parts.push(`${String(response.tokens_per_second)} tok/s`);
+    }
+    if (response.generation_time_ms !== undefined) {
+      const secs = (response.generation_time_ms / 1000).toFixed(1);
+      parts.push(`${secs}s`);
+    }
+    const ctx = this.client.getContextStats();
+    if (ctx.completion_tokens > 0) {
+      parts.push(`${String(ctx.completion_tokens)} tokens`);
+    }
+    if (parts.length > 0) {
+      console.log(`\x1b[90m[${parts.join(" | ")}]\x1b[0m`);
+    }
+  }
+
   private getPrompt(): string {
     const stats = this.client.getContextStats();
     const model = this.client.getCurrentModel() ?? "no model";
@@ -394,6 +412,7 @@ LocalCode v${this.config.getVersion()} - Commands:
         if (content.trim() !== "") {
           process.stdout.write("\n");
         }
+        this.showGenerationStats(response);
 
         const results: ToolResult[] = [];
         for (const call of toolCalls) {
@@ -412,10 +431,12 @@ LocalCode v${this.config.getVersion()} - Commands:
         const followup = await this.client.chat(followupMessages, undefined, undefined, onToken);
         const followupContent = followup.message.content;
         process.stdout.write("\n");
+        this.showGenerationStats(followup);
         this.session.addMessage("assistant", followupContent);
       } else {
         // Pure text response — already streamed
         process.stdout.write("\n");
+        this.showGenerationStats(response);
         this.session.addMessage("assistant", content);
       }
     } catch (err: unknown) {

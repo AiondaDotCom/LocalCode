@@ -130,6 +130,8 @@ export interface ChatResponse {
   total_duration?: number;
   prompt_eval_count?: number;
   eval_count?: number;
+  generation_time_ms?: number;
+  tokens_per_second?: number;
 }
 
 export interface ContextStats {

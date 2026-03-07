@@ -284,6 +284,7 @@ export class Client {
     const body = JSON.stringify(payload);
 
     return new Promise((resolve, reject) => {
+      const startTime = Date.now();
       const parsed = new URL(url);
       const req = http.request(
         {
@@ -378,6 +379,11 @@ export class Client {
                 })
               : undefined;
 
+            const elapsed = Date.now() - startTime;
+            const tps = this.completionTokens > 0 && elapsed > 0
+              ? Math.round((this.completionTokens / elapsed) * 1000 * 10) / 10
+              : undefined;
+
             resolve({
               message: {
                 role: "assistant",
@@ -385,6 +391,8 @@ export class Client {
                 tool_calls: toolCalls,
               },
               done: true,
+              generation_time_ms: elapsed,
+              tokens_per_second: tps,
             });
           });
         },

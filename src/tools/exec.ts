@@ -1,0 +1,176 @@
+import { execSync } from "node:child_process";
+import * as fs from "node:fs";
+import type { ToolResult } from "../types.js";
+import type { LocalTool } from "../mcp/servers/local.js";
+
+function checkExecutePermission(command: string): string | null {
+  const parts = command.trim().split(/\s+/);
+  const executable = parts[0];
+  if (executable === undefined) return null;
+
+  // Only check local files (starting with ./ or /)
+  if (!executable.startsWith("./") && !executable.startsWith("/")) return null;
+
+  if (!fs.existsSync(executable)) return null;
+
+  try {
+    fs.accessSync(executable, fs.constants.X_OK);
+    return null;
+  } catch {
+    const stat = fs.statSync(executable);
+    const mode = (stat.mode & 0o777).toString(8);
+    const ext = executable.split(".").pop() ?? "";
+
+    const interpreters: Record<string, string> = {
+      pl: "perl",
+      py: "python3",
+      rb: "ruby",
+      sh: "bash",
+      js: "node",
+      ts: "tsx",
+    };
+
+    const interpreter = interpreters[ext];
+    let suggestion = `chmod +x ${executable}`;
+    if (interpreter !== undefined) {
+      suggestion += ` or run: ${interpreter} ${executable}`;
+    }
+
+    return (
+      `Permission denied: ${executable} is not executable.\n` +
+      `Current permissions: ${mode}\n` +
+      `Fix: ${suggestion}`
+    );
+  }
+}
+
+async function toolBash(args: Record<string, string>): Promise<ToolResult> {
+  const command = args["command"] ?? args["cmd"] ?? "";
+  if (command === "") {
+    return { tool: "bash", success: false, output: "Missing command argument" };
+  }
+
+  const permError = checkExecutePermission(command);
+  if (permError !== null) {
+    return { tool: "bash", success: false, output: permError };
+  }
+
+  try {
+    const output = execSync(command, {
+      encoding: "utf-8",
+      timeout: 60000,
+      maxBuffer: 10 * 1024 * 1024,
+      cwd: process.cwd(),
+      stdio: ["pipe", "pipe", "pipe"],
+    });
+    return { tool: "bash", success: true, output: output.trimEnd() };
+  } catch (err: unknown) {
+    if (
+      typeof err === "object" &&
+      err !== null &&
+      "stdout" in err &&
+      "stderr" in err
+    ) {
+      const execErr = err as { stdout: string; stderr: string; status: number | null };
+      const output = (execErr.stdout + "\n" + execErr.stderr).trim();
+      return {
+        tool: "bash",
+        success: false,
+        output: `Exit code ${String(execErr.status ?? 1)}\n${output}`,
+      };
+    }
+    const msg = err instanceof Error ? err.message : String(err);
+    return { tool: "bash", success: false, output: msg };
+  }
+}
+
+async function toolTask(args: Record<string, string>): Promise<ToolResult> {
+  const command = args["command"] ?? "";
+  if (command === "") {
+    return { tool: "task", success: false, output: "Missing command argument" };
+  }
+  // Task delegates to bash with extended timeout
+  return toolBash({ command });
+}
+
+async function toolTodoRead(): Promise<ToolResult> {
+  const todoFile = ".localcode_todo.txt";
+  try {
+    if (!fs.existsSync(todoFile)) {
+      return { tool: "todoread", success: true, output: "No tasks found" };
+    }
+    const content = fs.readFileSync(todoFile, "utf-8");
+    return { tool: "todoread", success: true, output: content };
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return { tool: "todoread", success: false, output: msg };
+  }
+}
+
+async function toolTodoWrite(
+  args: Record<string, string>,
+): Promise<ToolResult> {
+  const task = args["task"] ?? args["description"] ?? "";
+  if (task === "") {
+    return { tool: "todowrite", success: false, output: "Missing task argument" };
+  }
+
+  try {
+    const timestamp = new Date().toISOString();
+    const line = `[${timestamp}] ${task}\n`;
+    fs.appendFileSync(".localcode_todo.txt", line, "utf-8");
+    return { tool: "todowrite", success: true, output: `Added: ${task}` };
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return { tool: "todowrite", success: false, output: msg };
+  }
+}
+
+export const execTools: LocalTool[] = [
+  {
+    name: "bash",
+    description: "Execute a shell command",
+    inputSchema: {
+      type: "object",
+      properties: {
+        command: { type: "string", description: "Shell command to execute" },
+      },
+      required: ["command"],
+    },
+    permissionLevel: "dangerous",
+    handler: toolBash,
+  },
+  {
+    name: "task",
+    description: "Execute a complex task command",
+    inputSchema: {
+      type: "object",
+      properties: {
+        command: { type: "string", description: "Task command" },
+      },
+      required: ["command"],
+    },
+    permissionLevel: "dangerous",
+    handler: toolTask,
+  },
+  {
+    name: "todoread",
+    description: "Read the task list",
+    inputSchema: { type: "object", properties: {} },
+    permissionLevel: "safe",
+    handler: toolTodoRead,
+  },
+  {
+    name: "todowrite",
+    description: "Add a task to the task list",
+    inputSchema: {
+      type: "object",
+      properties: {
+        task: { type: "string", description: "Task description" },
+      },
+      required: ["task"],
+    },
+    permissionLevel: "dangerous",
+    handler: toolTodoWrite,
+  },
+];

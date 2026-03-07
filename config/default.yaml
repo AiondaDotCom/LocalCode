@@ -1,28 +1,40 @@
+backend: "mlx"
+
+mlx:
+  host: "127.0.0.1"
+  port: 8000
+  default_model: "nightmedia/Qwen3.5-35B-A3B-Text-qx64-hi-mlx"
+  current_model: null
+  timeout: 300
+  context_window: 32768
+  max_tokens: 8192
+
 ollama:
   host: "localhost"
   port: 11434
   default_model: "codellama:latest"
-  current_model: null  # Auto-detect from available models
+  current_model: null
   timeout: 120
 
 ui:
   colors: true
   streaming: true
   history_size: 100
-  prompt_injection: true
-  slash_commands: true
   prompt_prefix: "localcode> "
 
-tools:
-  enabled: ["file_read", "file_write", "shell_exec", "grep_search"]
-  timeout: 60
-
 permissions:
-  safe_auto_allow: ["file_read", "grep_search"]
-  dangerous_confirm: ["file_write", "shell_exec", "file_delete"]
+  safe_auto_allow:
+    - file_read
+    - grep_search
+    - websearch
+    - webopen
+    - webfind
+  dangerous_confirm:
+    - file_write
+    - shell_exec
+    - file_delete
   blocked: []
-  remember_choice: true
-  
+
 testing:
   auto_approve: false
   auto_deny: false

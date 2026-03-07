@@ -266,20 +266,42 @@ export class UI {
   private compactOutput(output: string): string {
     // Try to extract key info from JSON tool results
     try {
-      const parsed = JSON.parse(output) as Record<string, unknown>;
+      const parsed = JSON.parse(output) as unknown;
+
+      // Handle arrays (e.g. listKnownHosts) — summarize
+      if (Array.isArray(parsed)) {
+        const items = parsed as Array<Record<string, unknown>>;
+        if (items.length <= 20) {
+          // Short array — compact single-line per item
+          const lines = items.map((item) => {
+            const key = item["hostname"] ?? item["name"] ?? item["host"] ?? item["alias"] ?? "";
+            const src = item["source"] ?? item["scope"] ?? "";
+            if (key !== "") return src ? `${String(key)} (${String(src)})` : String(key);
+            return JSON.stringify(item);
+          });
+          return `${String(items.length)} items: ${lines.join(", ")}`;
+        }
+        // Large array — show count + first/last few
+        const first = items.slice(0, 5).map((i) => JSON.stringify(i)).join(", ");
+        const last = items.slice(-3).map((i) => JSON.stringify(i)).join(", ");
+        return `${String(items.length)} items: [${first}, ... ${last}]`;
+      }
+
+      // Handle objects with stdout/stderr/code
+      const obj = parsed as Record<string, unknown>;
       const parts: string[] = [];
-      if (typeof parsed["stdout"] === "string" && parsed["stdout"] !== "") {
-        parts.push(parsed["stdout"].trim());
+      if (typeof obj["stdout"] === "string" && obj["stdout"] !== "") {
+        parts.push(obj["stdout"].trim());
       }
-      if (typeof parsed["stderr"] === "string" && parsed["stderr"] !== "") {
-        parts.push(`stderr: ${(parsed["stderr"] as string).trim()}`);
+      if (typeof obj["stderr"] === "string" && obj["stderr"] !== "") {
+        parts.push(`stderr: ${(obj["stderr"] as string).trim()}`);
       }
-      if (parsed["code"] !== undefined && parsed["code"] !== 0) {
-        parts.push(`exit ${String(parsed["code"])}`);
+      if (obj["code"] !== undefined && obj["code"] !== 0) {
+        parts.push(`exit ${String(obj["code"])}`);
       }
       // Handle runCommandBatch results
-      if (Array.isArray(parsed["results"])) {
-        for (const r of parsed["results"] as Array<Record<string, unknown>>) {
+      if (Array.isArray(obj["results"])) {
+        for (const r of obj["results"] as Array<Record<string, unknown>>) {
           if (typeof r["stdout"] === "string" && r["stdout"] !== "") {
             parts.push(r["stdout"].trim());
           }
@@ -594,7 +616,7 @@ LocalCode v${this.config.getVersion()} - Commands:
       // Agentic loop: keep executing tools until model gives pure text
       let currentTools: typeof tools | undefined = tools;
       let maxRounds = 10;
-      const recentCommands: string[] = [];
+      let lastCallKey = "";
 
       while (maxRounds-- > 0) {
         const currentMessages = this.session.getMessagesForChat(systemPrompt);
@@ -618,16 +640,16 @@ LocalCode v${this.config.getVersion()} - Commands:
           break;
         }
 
-        // Loop detection: check if the same commands are being repeated
+        // Loop detection: only trigger if exact same calls as previous round
         const callKey = toolCalls.map((c) => `${c.name}:${JSON.stringify(c.arguments)}`).join("|");
-        if (recentCommands.includes(callKey)) {
+        if (callKey === lastCallKey) {
           console.log(`\n\x1b[33m[loop detected — same command repeated, stopping]\x1b[0m`);
           process.stdout.write("\n");
           this.showGenerationStats(response);
           this.session.addMessage("assistant", content);
           break;
         }
-        recentCommands.push(callKey);
+        lastCallKey = callKey;
 
         // Tool calls detected
         if (content.trim() !== "") {

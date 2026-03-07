@@ -436,12 +436,12 @@ LocalCode v${this.config.getVersion()} - Commands:
   }
 
   private showMCPStatus(): void {
-    const servers = this.mcpManager.getStatus();
-    if (servers.length === 0) {
+    const running = this.mcpManager.getStatus();
+    if (running.length === 0) {
       console.log("No MCP servers configured");
       return;
     }
-    for (const s of servers) {
+    for (const s of running) {
       const status = s.connected ? "\x1b[32mconnected\x1b[0m" : "\x1b[31mdisconnected\x1b[0m";
       console.log(`  ${s.name}: ${status} (${String(s.tools.length)} tools)`);
     }
@@ -673,12 +673,15 @@ LocalCode v${this.config.getVersion()} - Commands:
       });
     };
 
-    rl.on("close", () => {
-      this.running = false;
-      this.shutdown(historyFile);
-    });
+    return new Promise<void>((resolve) => {
+      rl.on("close", () => {
+        this.running = false;
+        this.shutdown(historyFile);
+        resolve();
+      });
 
-    askQuestion();
+      askQuestion();
+    });
   }
 
   private shutdownDone = false;

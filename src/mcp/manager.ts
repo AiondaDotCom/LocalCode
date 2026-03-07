@@ -71,6 +71,14 @@ export class MCPManager {
       tools,
       connected: true,
     });
+
+    // Track disconnections
+    transport.onclose = () => {
+      const srv = this.servers.get(name);
+      if (srv !== undefined) {
+        srv.connected = false;
+      }
+    };
   }
 
   async stopServer(name: string): Promise<void> {

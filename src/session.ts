@@ -98,6 +98,14 @@ export class Session {
     return this.history.length;
   }
 
+  estimateTokenCount(): number {
+    let chars = 0;
+    for (const m of this.history) {
+      chars += m.content.length;
+    }
+    return Math.ceil(chars / 4);
+  }
+
   truncateHistory(removePairs = 3): void {
     const removeCount = removePairs * 2;
     if (this.history.length > removeCount) {

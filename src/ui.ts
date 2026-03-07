@@ -6,7 +6,7 @@ import type { Session } from "./session.js";
 import type { Permissions } from "./permissions.js";
 import type { Config } from "./config.js";
 import type { MCPManager } from "./mcp/manager.js";
-import type { ToolCall, ToolResult, MCPToolInfo, ChatResponse } from "./types.js";
+import type { ToolCall, ToolResult, MCPToolInfo, ChatResponse, Message } from "./types.js";
 import {
   getLocalTools,
   getLocalToolPermission,
@@ -256,6 +256,10 @@ export class UI {
         console.log("Session cleared");
         return true;
 
+      case "/compact":
+        await this.compactHistory();
+        return true;
+
       case "/pwd":
         console.log(process.cwd());
         return true;
@@ -295,6 +299,7 @@ LocalCode v${this.config.getVersion()} - Commands:
   /load <name>     Load session
   /sessions        List saved sessions
   /clear           Clear session
+  /compact         Compress conversation history
   /pwd             Show working directory
   /cd [path]       Change directory
   /version         Show version
@@ -365,6 +370,55 @@ LocalCode v${this.config.getVersion()} - Commands:
     }
   }
 
+  private async compactHistory(): Promise<void> {
+    const estimated = this.session.estimateTokenCount();
+    const msgCount = this.session.getMessageCount();
+    if (msgCount < 4) {
+      console.log("Not enough history to compact");
+      return;
+    }
+
+    process.stdout.write("\x1b[90mCompacting conversation...\x1b[0m\r");
+
+    const summarizer = async (messages: Message[]): Promise<string> => {
+      const summaryMessages: Message[] = [
+        {
+          role: "system",
+          content: "Summarize the following conversation in 2-3 concise sentences. Focus on what was done, key decisions, and current state. Be brief.",
+        },
+        {
+          role: "user",
+          content: messages.map((m) => `${m.role}: ${m.content}`).join("\n\n"),
+        },
+      ];
+      const resp = await this.client.chat(summaryMessages);
+      return resp.message.content;
+    };
+
+    const compressed = await this.session.compressHistory(summarizer);
+    process.stdout.write("\x1b[2K");
+    if (compressed) {
+      const newEstimate = this.session.estimateTokenCount();
+      const saved = estimated - newEstimate;
+      console.log(`\x1b[32mCompacted: ~${String(saved)} tokens freed (${String(msgCount)} → ${String(this.session.getMessageCount())} messages)\x1b[0m`);
+    } else {
+      console.log("Could not compact history");
+    }
+  }
+
+  private async autoCompressIfNeeded(): Promise<void> {
+    const ctx = this.client.getContextStats();
+    const estimated = this.session.estimateTokenCount();
+    const pct = ctx.context_window > 0
+      ? (estimated / ctx.context_window) * 100
+      : 0;
+
+    if (pct > 70 && this.session.getMessageCount() >= 6) {
+      console.log(`\x1b[33mContext at ${Math.round(pct)}% — auto-compacting...\x1b[0m`);
+      await this.compactHistory();
+    }
+  }
+
   private showGenerationStats(response: ChatResponse): void {
     const parts: string[] = [];
     if (response.tokens_per_second !== undefined) {
@@ -378,16 +432,26 @@ LocalCode v${this.config.getVersion()} - Commands:
     if (ctx.completion_tokens > 0) {
       parts.push(`${String(ctx.completion_tokens)} tokens`);
     }
+    const estimated = this.session.estimateTokenCount();
+    const pct = ctx.context_window > 0
+      ? Math.round((estimated / ctx.context_window) * 100)
+      : 0;
+    parts.push(`ctx ${String(pct)}%`);
     if (parts.length > 0) {
       console.log(`\x1b[90m[${parts.join(" | ")}]\x1b[0m`);
     }
   }
 
   private getPrompt(): string {
-    const stats = this.client.getContextStats();
+    const ctx = this.client.getContextStats();
     const model = this.client.getCurrentModel() ?? "no model";
-    const pct = stats.percentage > 0 ? ` ${String(stats.percentage)}%` : "";
-    return `\x1b[36m${model}${pct}\x1b[0m> `;
+    const estimated = this.session.estimateTokenCount();
+    const pct = ctx.context_window > 0
+      ? Math.round((estimated / ctx.context_window) * 100)
+      : 0;
+    const pctStr = pct > 0 ? ` ${String(pct)}%` : "";
+    const color = pct > 80 ? "\x1b[31m" : pct > 50 ? "\x1b[33m" : "\x1b[36m";
+    return `${color}${model}${pctStr}\x1b[0m> `;
   }
 
   async processInput(input: string): Promise<void> {
@@ -446,6 +510,8 @@ LocalCode v${this.config.getVersion()} - Commands:
       const msg = err instanceof Error ? `${err.message}\n${err.stack ?? ""}` : String(err);
       console.error(`\x1b[31mError: ${msg}\x1b[0m`);
     }
+
+    await this.autoCompressIfNeeded();
   }
 
   async startRepl(): Promise<void> {
@@ -546,7 +612,7 @@ LocalCode v${this.config.getVersion()} - Commands:
     const commands = [
       "/help", "/version", "/models", "/model", "/current",
       "/tools", "/permissions", "/mcp", "/save", "/load",
-      "/sessions", "/clear", "/pwd", "/cd", "/exit",
+      "/sessions", "/clear", "/compact", "/pwd", "/cd", "/exit",
     ];
 
     if (line.startsWith("/")) {

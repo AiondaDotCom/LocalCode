@@ -607,8 +607,32 @@ LocalCode v${this.config.getVersion()} - Commands:
     const tools = this.buildToolsArray();
 
     try {
+      let boldOpen = false;
+      let tokenBuffer = "";
       const onToken = (token: string): void => {
-        process.stdout.write(token);
+        tokenBuffer += token;
+        // Process all complete ** markers in the buffer
+        while (tokenBuffer.includes("**")) {
+          const idx = tokenBuffer.indexOf("**");
+          // Output text before the marker
+          if (idx > 0) {
+            process.stdout.write(tokenBuffer.slice(0, idx));
+          }
+          // Toggle bold
+          boldOpen = !boldOpen;
+          process.stdout.write(boldOpen ? "\x1b[1m" : "\x1b[22m");
+          tokenBuffer = tokenBuffer.slice(idx + 2);
+        }
+        // Output everything except a trailing '*' (might be start of **)
+        if (tokenBuffer.endsWith("*")) {
+          if (tokenBuffer.length > 1) {
+            process.stdout.write(tokenBuffer.slice(0, -1));
+            tokenBuffer = "*";
+          }
+        } else {
+          process.stdout.write(tokenBuffer);
+          tokenBuffer = "";
+        }
       };
 
       // Agentic loop: keep executing tools until model gives pure text
@@ -641,11 +665,15 @@ LocalCode v${this.config.getVersion()} - Commands:
         // Loop detection: only trigger if exact same calls as previous round
         const callKey = toolCalls.map((c) => `${c.name}:${JSON.stringify(c.arguments)}`).join("|");
         if (callKey === lastCallKey) {
-          console.log(`\n\x1b[33m[loop detected — same command repeated, stopping]\x1b[0m`);
-          process.stdout.write("\n");
+          console.log(`\n\x1b[33m[loop detected — skipping duplicate, continuing with results]\x1b[0m`);
           this.showGenerationStats(response);
+          // Don't execute again, but add a hint and let model try with text
           this.session.addMessage("assistant", content);
-          break;
+          this.session.addMessage("tool", "You already called this tool and got the result above. Use the previous result to proceed. Do NOT call the same tool again.");
+          // One more chance without the duplicate
+          lastCallKey = "";
+          currentTools = tools;
+          continue;
         }
         lastCallKey = callKey;
 

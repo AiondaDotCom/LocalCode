@@ -258,9 +258,45 @@ export class UI {
     return results
       .map(
         (r) =>
-          `[${r.success ? "OK" : "ERR"}] ${r.tool}: ${r.output}`,
+          `[${r.success ? "OK" : "ERR"}] ${r.tool}: ${this.compactOutput(r.output)}`,
       )
       .join("\n\n");
+  }
+
+  private compactOutput(output: string): string {
+    // Try to extract key info from JSON tool results
+    try {
+      const parsed = JSON.parse(output) as Record<string, unknown>;
+      const parts: string[] = [];
+      if (typeof parsed["stdout"] === "string" && parsed["stdout"] !== "") {
+        parts.push(parsed["stdout"].trim());
+      }
+      if (typeof parsed["stderr"] === "string" && parsed["stderr"] !== "") {
+        parts.push(`stderr: ${(parsed["stderr"] as string).trim()}`);
+      }
+      if (parsed["code"] !== undefined && parsed["code"] !== 0) {
+        parts.push(`exit ${String(parsed["code"])}`);
+      }
+      // Handle runCommandBatch results
+      if (Array.isArray(parsed["results"])) {
+        for (const r of parsed["results"] as Array<Record<string, unknown>>) {
+          if (typeof r["stdout"] === "string" && r["stdout"] !== "") {
+            parts.push(r["stdout"].trim());
+          }
+          if (typeof r["stderr"] === "string" && r["stderr"] !== "") {
+            parts.push(`stderr: ${(r["stderr"] as string).trim()}`);
+          }
+        }
+      }
+      if (parts.length > 0) return parts.join("\n");
+    } catch {
+      // Not JSON, use as-is
+    }
+    // Truncate very long output
+    if (output.length > 2000) {
+      return `${output.slice(0, 2000)}\n[...truncated]`;
+    }
+    return output;
   }
 
   async handleSlashCommand(input: string): Promise<boolean> {

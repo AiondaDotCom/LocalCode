@@ -292,9 +292,9 @@ export class UI {
     } catch {
       // Not JSON, use as-is
     }
-    // Truncate very long output
+    // Truncate very long output but keep head + tail
     if (output.length > 2000) {
-      return `${output.slice(0, 2000)}\n[...truncated]`;
+      return `${output.slice(0, 1500)}\n[...${String(output.length - 2000)} chars truncated...]\n${output.slice(-500)}`;
     }
     return output;
   }

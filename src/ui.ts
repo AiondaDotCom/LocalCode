@@ -608,8 +608,8 @@ LocalCode v${this.config.getVersion()} - Commands:
         this.session.addMessage("assistant", content);
         this.session.addMessage("tool", resultText);
 
-        // Next round: send without tools to prevent duplicate calls
-        currentTools = undefined;
+        // Next round: keep tools available so model can make further calls
+        // Loop detection prevents duplicate commands
       }
     } catch (err: unknown) {
       const msg = err instanceof Error ? `${err.message}\n${err.stack ?? ""}` : String(err);

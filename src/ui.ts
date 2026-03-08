@@ -26,6 +26,7 @@ export class UI {
   private mcpTools: LocalTool[];
   private rl: readline.Interface | null = null;
   private running = false;
+  private abortController: AbortController | null = null;
 
   constructor(
     client: Client,
@@ -415,6 +416,14 @@ export class UI {
         return true;
       }
 
+      case "/init":
+        await this.generateInit();
+        return true;
+
+      case "/mlx":
+        await this.handleMLXCommand(arg);
+        return true;
+
       case "/exit":
       case "/quit":
         this.running = false;
@@ -440,12 +449,181 @@ LocalCode v${this.config.getVersion()} - Commands:
   /sessions        List saved sessions
   /clear           Clear session
   /compact         Compress conversation history
+  /init            Generate LOCALCODE.md in current directory
+  /mlx <cmd>       MLX server: start, stop, restart, status
   /pwd             Show working directory
   /cd [path]       Change directory
   /version         Show version
   /help            Show this help
   /exit            Exit
 `.trim());
+  }
+
+  private async generateInit(): Promise<void> {
+    const cwd = process.cwd();
+    const targetFile = path.join(cwd, "LOCALCODE.md");
+
+    if (fs.existsSync(targetFile)) {
+      console.log(`LOCALCODE.md already exists at ${targetFile}`);
+      return;
+    }
+
+    // Gather project context for the LLM
+    process.stdout.write("\x1b[90mAnalyzing project...\x1b[0m\r");
+    const projectInfo = this.gatherProjectInfo(cwd);
+
+    const messages: Message[] = [
+      {
+        role: "system",
+        content: `You are generating a LOCALCODE.md file for an AI coding agent. This file tells the agent about the project so it can work effectively. Write ONLY the markdown content, no explanations.
+
+The file should include:
+- Project name and brief description
+- Tech stack and key dependencies
+- Project structure (key directories)
+- How to build, test, and run
+- Coding conventions and patterns used
+- Important notes (gotchas, things to avoid, architectural decisions)
+
+Keep it concise and practical. Focus on information an AI agent needs to work on this codebase. Use sections with ## headings. Do not include generic advice — be specific to THIS project.`,
+      },
+      {
+        role: "user",
+        content: `Analyze this project and generate a LOCALCODE.md:\n\n${projectInfo}`,
+      },
+    ];
+
+    try {
+      process.stdout.write("\x1b[2K\x1b[90mGenerating LOCALCODE.md...\x1b[0m\r");
+      const response = await this.client.chat(messages);
+      const content = response.message.content.trim();
+      process.stdout.write("\x1b[2K");
+
+      if (content.length < 50) {
+        console.log("LLM response too short. Try again.");
+        return;
+      }
+
+      fs.writeFileSync(targetFile, content + "\n", "utf-8");
+      console.log(`Created ${targetFile}`);
+    } catch (err: unknown) {
+      process.stdout.write("\x1b[2K");
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error(`Failed to generate: ${msg}`);
+    }
+  }
+
+  private gatherProjectInfo(cwd: string): string {
+    const parts: string[] = [];
+    const projectName = path.basename(cwd);
+    parts.push(`Project directory: ${projectName}`);
+
+    // package.json
+    const pkgPath = path.join(cwd, "package.json");
+    if (fs.existsSync(pkgPath)) {
+      try {
+        const pkg = fs.readFileSync(pkgPath, "utf-8");
+        parts.push(`\n--- package.json ---\n${pkg}`);
+      } catch { /* ignore */ }
+    }
+
+    // Cargo.toml, pyproject.toml, go.mod, Makefile, etc.
+    const configFiles = [
+      "Cargo.toml", "pyproject.toml", "setup.py", "go.mod",
+      "Makefile", "CMakeLists.txt", "Gemfile", "composer.json",
+      "pom.xml", "build.gradle", "angular.json", "tsconfig.json",
+    ];
+    for (const f of configFiles) {
+      const fp = path.join(cwd, f);
+      if (fs.existsSync(fp)) {
+        try {
+          const content = fs.readFileSync(fp, "utf-8");
+          const truncated = content.split("\n").slice(0, 50).join("\n");
+          parts.push(`\n--- ${f} ---\n${truncated}`);
+        } catch { /* ignore */ }
+      }
+    }
+
+    // Directory listing (top-level + src/)
+    try {
+      const entries = fs.readdirSync(cwd, { withFileTypes: true });
+      const listing = entries
+        .map((e) => `${e.isDirectory() ? "d" : "f"} ${e.name}`)
+        .join("\n");
+      parts.push(`\n--- Directory listing ---\n${listing}`);
+    } catch { /* ignore */ }
+
+    // src/ listing if exists
+    const srcDir = path.join(cwd, "src");
+    if (fs.existsSync(srcDir)) {
+      try {
+        const srcEntries = fs.readdirSync(srcDir, { withFileTypes: true });
+        const srcListing = srcEntries
+          .map((e) => `${e.isDirectory() ? "d" : "f"} ${e.name}`)
+          .join("\n");
+        parts.push(`\n--- src/ listing ---\n${srcListing}`);
+      } catch { /* ignore */ }
+    }
+
+    // README (first 80 lines)
+    for (const readme of ["README.md", "README", "README.txt", "readme.md"]) {
+      const rp = path.join(cwd, readme);
+      if (fs.existsSync(rp)) {
+        try {
+          const content = fs.readFileSync(rp, "utf-8");
+          const truncated = content.split("\n").slice(0, 80).join("\n");
+          parts.push(`\n--- ${readme} (first 80 lines) ---\n${truncated}`);
+        } catch { /* ignore */ }
+        break;
+      }
+    }
+
+    // Existing CLAUDE.md (to incorporate)
+    const claudeMd = path.join(cwd, "CLAUDE.md");
+    if (fs.existsSync(claudeMd)) {
+      try {
+        const content = fs.readFileSync(claudeMd, "utf-8");
+        const truncated = content.split("\n").slice(0, 100).join("\n");
+        parts.push(`\n--- Existing CLAUDE.md (first 100 lines) ---\n${truncated}`);
+      } catch { /* ignore */ }
+    }
+
+    return parts.join("\n");
+  }
+
+  private async handleMLXCommand(arg: string): Promise<void> {
+    if (process.env["LOCALCODE_SANDBOX"] === "1") {
+      console.log("\x1b[33mMLX server control is not available in sandbox mode.\x1b[0m");
+      console.log("\x1b[90mThe MLX server runs on the host — manage it outside the container.\x1b[0m");
+      return;
+    }
+
+    const { startMLXServer, stopMLXServer } = await import("./mlx.js");
+    const port = this.config.getBackendConfig().port;
+
+    switch (arg) {
+      case "start":
+        await startMLXServer(port);
+        await this.client.connect();
+        break;
+      case "stop":
+        stopMLXServer();
+        this.client.disconnect();
+        break;
+      case "restart":
+        stopMLXServer();
+        await new Promise((r) => setTimeout(r, 2000));
+        await startMLXServer(port);
+        await this.client.connect();
+        break;
+      case "status": {
+        const status = this.client.getStatus();
+        console.log(`MLX server: ${status === "connected" ? "\x1b[32mconnected\x1b[0m" : "\x1b[31mdisconnected\x1b[0m"}`);
+        break;
+      }
+      default:
+        console.log("Usage: /mlx <start|stop|restart|status>");
+    }
   }
 
   private showModels(): void {
@@ -548,9 +726,11 @@ LocalCode v${this.config.getVersion()} - Commands:
 
   private async autoCompressIfNeeded(): Promise<void> {
     const ctx = this.client.getContextStats();
-    const estimated = this.session.estimateTokenCount();
+    const usedTokens = ctx.prompt_tokens > 0
+      ? ctx.prompt_tokens + ctx.completion_tokens
+      : this.session.estimateTokenCount();
     const pct = ctx.context_window > 0
-      ? (estimated / ctx.context_window) * 100
+      ? (usedTokens / ctx.context_window) * 100
       : 0;
 
     if (pct > 70 && this.session.getMessageCount() >= 6) {
@@ -572,9 +752,12 @@ LocalCode v${this.config.getVersion()} - Commands:
     if (ctx.completion_tokens > 0) {
       parts.push(`${String(ctx.completion_tokens)} tokens`);
     }
-    const estimated = this.session.estimateTokenCount();
+    // Use actual prompt_tokens from server if available, else estimate
+    const usedTokens = ctx.prompt_tokens > 0
+      ? ctx.prompt_tokens + ctx.completion_tokens
+      : this.session.estimateTokenCount();
     const pct = ctx.context_window > 0
-      ? Math.round((estimated / ctx.context_window) * 100)
+      ? Math.round((usedTokens / ctx.context_window) * 100)
       : 0;
     parts.push(`ctx ${String(pct)}%`);
     if (parts.length > 0) {
@@ -585,9 +768,11 @@ LocalCode v${this.config.getVersion()} - Commands:
   private getPrompt(): string {
     const ctx = this.client.getContextStats();
     const model = this.client.getCurrentModel() ?? "no model";
-    const estimated = this.session.estimateTokenCount();
+    const usedTokens = ctx.prompt_tokens > 0
+      ? ctx.prompt_tokens + ctx.completion_tokens
+      : this.session.estimateTokenCount();
     const pct = ctx.context_window > 0
-      ? Math.round((estimated / ctx.context_window) * 100)
+      ? Math.round((usedTokens / ctx.context_window) * 100)
       : 0;
     const pctStr = pct > 0 ? ` ${String(pct)}%` : "";
     const color = pct > 80 ? "\x1b[31m" : pct > 50 ? "\x1b[33m" : "\x1b[36m";
@@ -600,11 +785,26 @@ LocalCode v${this.config.getVersion()} - Commands:
       if (handled) return;
     }
 
+    // ! prefix: direct shell execution without AI
+    if (input.startsWith("!")) {
+      const cmd = input.slice(1).trim();
+      if (cmd === "") return;
+      try {
+        const { execSync } = await import("node:child_process");
+        const output = execSync(cmd, { cwd: process.cwd(), stdio: "inherit", timeout: 60000 });
+      } catch {
+        // exit code shown by stdio: inherit
+      }
+      return;
+    }
+
     this.session.addMessage("user", input);
 
     const systemPrompt = this.buildSystemPrompt();
     const messages = this.session.getMessagesForChat(systemPrompt);
     const tools = this.buildToolsArray();
+    this.abortController = new AbortController();
+    const abortSignal = this.abortController.signal;
 
     try {
       let boldOpen = false;
@@ -637,12 +837,23 @@ LocalCode v${this.config.getVersion()} - Commands:
 
       // Agentic loop: keep executing tools until model gives pure text
       let currentTools: typeof tools | undefined = tools;
-      let maxRounds = 10;
+      let maxRounds = Infinity;
       let lastCallKey = "";
+      let hadToolCalls = false;
+      let textOnlyRounds = 0;
 
       while (maxRounds-- > 0) {
+        if (abortSignal.aborted) break;
         const currentMessages = this.session.getMessagesForChat(systemPrompt);
-        const response = await this.client.chat(currentMessages, undefined, currentTools, onToken);
+
+        const response = await this.client.chat(currentMessages, undefined, currentTools, onToken, abortSignal);
+        if (abortSignal.aborted) {
+          const partial = response.message.content;
+          if (partial.trim() !== "") {
+            this.session.addMessage("assistant", partial);
+          }
+          break;
+        }
         const content = response.message.content;
         let toolCalls = response.message.tool_calls ?? this.parseToolCalls(content);
 
@@ -655,10 +866,20 @@ LocalCode v${this.config.getVersion()} - Commands:
         }
 
         if (toolCalls.length === 0) {
-          // Pure text response — done
           process.stdout.write("\n");
           this.showGenerationStats(response);
           this.session.addMessage("assistant", content);
+
+          // If we had tool calls before, nudge the model to continue with tools
+          textOnlyRounds++;
+          if (hadToolCalls && maxRounds > 1 && textOnlyRounds <= 3) {
+            const nudge = textOnlyRounds === 1
+              ? "Continue."
+              : "You MUST use tool calls now. Do NOT write text — call a tool to proceed.";
+            this.session.addMessage("user", nudge);
+            console.log(`\x1b[33m[retry tool calling ${String(textOnlyRounds)}/3]\x1b[0m`);
+            continue;
+          }
           break;
         }
 
@@ -676,6 +897,8 @@ LocalCode v${this.config.getVersion()} - Commands:
           continue;
         }
         lastCallKey = callKey;
+        hadToolCalls = true;
+        textOnlyRounds = 0;
 
         // Tool calls detected
         if (content.trim() !== "") {
@@ -685,8 +908,13 @@ LocalCode v${this.config.getVersion()} - Commands:
 
         const results: ToolResult[] = [];
         for (const call of toolCalls) {
+          if (abortSignal.aborted) break;
           const result = await this.executeTool(call);
           results.push(result);
+        }
+        if (abortSignal.aborted) {
+          this.session.addMessage("assistant", content);
+          break;
         }
 
         const resultText = this.formatToolResults(results);
@@ -699,8 +927,12 @@ LocalCode v${this.config.getVersion()} - Commands:
         // Loop detection prevents duplicate commands
       }
     } catch (err: unknown) {
-      const msg = err instanceof Error ? `${err.message}\n${err.stack ?? ""}` : String(err);
-      console.error(`\x1b[31mError: ${msg}\x1b[0m`);
+      if (!abortSignal.aborted) {
+        const msg = err instanceof Error ? `${err.message}\n${err.stack ?? ""}` : String(err);
+        console.error(`\x1b[31mError: ${msg}\x1b[0m`);
+      }
+    } finally {
+      this.abortController = null;
     }
 
     await this.autoCompressIfNeeded();
@@ -728,6 +960,17 @@ LocalCode v${this.config.getVersion()} - Commands:
         (rl as unknown as { history: string[] }).history?.unshift(line);
       }
     }
+
+    // ESC key listener for aborting operations
+    const onKeypress = (data: Buffer): void => {
+      // ESC = 0x1b, but arrow keys etc. send \x1b[ sequences
+      // Lone ESC: just the single byte \x1b
+      if (data.length === 1 && data[0] === 0x1b && this.abortController !== null) {
+        this.abortController.abort();
+        process.stdout.write("\n\x1b[33m[interrupted]\x1b[0m\n");
+      }
+    };
+    process.stdin.on("data", onKeypress);
 
     // Inject permission prompter that uses the REPL readline
     this.permissions.setPrompter((message: string) => {
@@ -807,7 +1050,7 @@ LocalCode v${this.config.getVersion()} - Commands:
     const commands = [
       "/help", "/version", "/models", "/model", "/current",
       "/tools", "/permissions", "/mcp", "/save", "/load",
-      "/sessions", "/clear", "/compact", "/pwd", "/cd", "/exit",
+      "/sessions", "/clear", "/compact", "/init", "/mlx", "/pwd", "/cd", "/exit",
     ];
 
     if (line.startsWith("/")) {

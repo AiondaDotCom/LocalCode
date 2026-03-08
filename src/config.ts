@@ -60,7 +60,19 @@ export class Config {
 
   getBackendConfig(): BackendConfig {
     const backend = this.config.backend;
-    return this.config[backend];
+    const bc = { ...this.config[backend] };
+
+    // Sandbox environment overrides
+    if (process.env["LOCALCODE_SANDBOX"] === "1") {
+      if (process.env["LOCALCODE_BACKEND_HOST"]) {
+        bc.host = process.env["LOCALCODE_BACKEND_HOST"];
+      }
+      if (process.env["LOCALCODE_BACKEND_PORT"]) {
+        bc.port = parseInt(process.env["LOCALCODE_BACKEND_PORT"], 10);
+      }
+    }
+
+    return bc;
   }
 
   getBackend(): "mlx" | "ollama" {

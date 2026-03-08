@@ -31,9 +31,12 @@ async function main(): Promise<void> {
     .action(async (prompt: string | undefined, opts: Record<string, unknown>) => {
       const config = new Config();
 
-      // Apply backend override
-      if (typeof opts["backend"] === "string") {
-        config.set("backend", opts["backend"]);
+      // Apply backend override (CLI flag or sandbox env)
+      const backendOverride = typeof opts["backend"] === "string"
+        ? opts["backend"]
+        : process.env["LOCALCODE_BACKEND"];
+      if (backendOverride !== undefined) {
+        config.set("backend", backendOverride);
       }
 
       // Initialize components
@@ -113,6 +116,32 @@ async function main(): Promise<void> {
         await ui.startRepl();
         await mcpManager.stopAll();
       }
+    });
+
+  // Sandbox subcommand
+  program
+    .command("sandbox")
+    .description("Run LocalCode in a Docker sandbox")
+    .option("--backend <backend>", "Backend to use (mlx or ollama)", "mlx")
+    .option("--read-only", "Mount workspace as read-only", false)
+    .option("--no-network", "Disable network access (except LLM backend)")
+    .argument("[prompt]", "One-shot prompt (non-interactive)")
+    .allowUnknownOption()
+    .action(async (prompt: string | undefined, opts: Record<string, unknown>) => {
+      const { runInSandbox } = await import("./sandbox.js");
+      const config = new Config();
+      const bc = config.getBackendConfig();
+      const backend = typeof opts["backend"] === "string" ? opts["backend"] : config.getBackend();
+
+      await runInSandbox(process.cwd(), {
+        backend,
+        backendHost: bc.host,
+        backendPort: bc.port,
+        readOnly: opts["readOnly"] === true,
+        network: opts["network"] !== false,
+        prompt,
+        extraArgs: [],
+      });
     });
 
   // MCP subcommand — parse raw argv to avoid Commander eating flags like --command

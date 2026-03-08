@@ -14,7 +14,7 @@ function findPythonWithMlxLm(): string | null {
   // 1. Check if there's already a running mlx_lm.server — use its python
   try {
     const psOutput = execSync("ps aux 2>/dev/null", { encoding: "utf-8" });
-    const mlxLine = psOutput.split("\n").find((l) => l.includes("mlx_lm.server") && !l.includes("grep"));
+    const mlxLine = psOutput.split("\n").find((l) => (l.includes("mlx_lm.server") || l.includes("mlx_lm server")) && !l.includes("grep"));
     if (mlxLine !== undefined) {
       const match = /(\S*python\S*)\s+-m\s+mlx_lm/.exec(mlxLine);
       if (match?.[1] !== undefined && fs.existsSync(match[1])) {
@@ -197,8 +197,16 @@ export async function startMLXServer(port: number): Promise<boolean> {
 
 export function stopMLXServer(): boolean {
   try {
-    execSync("pkill -f mlx_lm.server 2>/dev/null || true", { encoding: "utf-8" });
-    process.stderr.write("\x1b[33mMLX server stopped\x1b[0m\n");
+    // Check if any MLX server is running first
+    const pids = execSync("pgrep -f 'mlx_lm[. ]server' 2>/dev/null || true", { encoding: "utf-8" }).trim();
+    if (pids === "") {
+      process.stderr.write("\x1b[90mNo MLX server running\x1b[0m\n");
+      return false;
+    }
+    const pidList = pids.split("\n").join(", ");
+    // Match both "mlx_lm.server" (localcode) and "mlx_lm server" (openclaw)
+    execSync("pkill -f 'mlx_lm[. ]server' 2>/dev/null || true", { encoding: "utf-8" });
+    process.stderr.write(`\x1b[33mMLX server stopped (PID ${pidList})\x1b[0m\n`);
     return true;
   } catch {
     return false;

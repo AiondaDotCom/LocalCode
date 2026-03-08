@@ -251,11 +251,12 @@ export class Client {
       function: { name: string; description: string; parameters: Record<string, unknown> };
     }>,
     onToken?: (token: string) => void,
+    abortSignal?: AbortSignal,
   ): Promise<ChatResponse> {
     const targetModel = model ?? this.currentModel ?? this.defaultModel;
 
     if (this.backend === "mlx") {
-      return this.mlxChat(messages, targetModel, tools, onToken);
+      return this.mlxChat(messages, targetModel, tools, onToken, abortSignal);
     }
     return this.ollamaChat(messages, targetModel);
   }
@@ -268,6 +269,7 @@ export class Client {
       function: { name: string; description: string; parameters: Record<string, unknown> };
     }>,
     onToken?: (token: string) => void,
+    abortSignal?: AbortSignal,
   ): Promise<ChatResponse> {
     const url = `${this.baseUrl}/v1/chat/completions`;
     const payload: Record<string, unknown> = {
@@ -366,7 +368,7 @@ export class Client {
             }
           });
 
-          res.on("end", () => {
+          const buildResponse = (): ChatResponse => {
             const content = contentParts.join("");
             const toolCalls = toolCallParts.length > 0
               ? toolCallParts.map((tc) => {
@@ -390,7 +392,7 @@ export class Client {
               ? Math.round((tokens / elapsed) * 1000 * 10) / 10
               : undefined;
 
-            resolve({
+            return {
               message: {
                 role: "assistant",
                 content,
@@ -399,15 +401,41 @@ export class Client {
               done: true,
               generation_time_ms: elapsed,
               tokens_per_second: tps,
-            });
+            };
+          };
+
+          // On abort: resolve with partial content
+          res.on("close", () => {
+            if (abortSignal?.aborted) {
+              resolve(buildResponse());
+            }
+          });
+
+          res.on("end", () => {
+            resolve(buildResponse());
           });
         },
       );
-      req.on("error", reject);
+      req.on("error", (err) => {
+        if ((err as NodeJS.ErrnoException).code === "ECONNRESET" && abortSignal?.aborted) {
+          return;
+        }
+        reject(err);
+      });
       req.on("timeout", () => {
         req.destroy();
         reject(new Error("Request timeout"));
       });
+
+      // Abort support
+      if (abortSignal) {
+        const onAbort = (): void => {
+          req.destroy();
+        };
+        abortSignal.addEventListener("abort", onAbort, { once: true });
+        req.on("close", () => abortSignal.removeEventListener("abort", onAbort));
+      }
+
       req.write(body);
       req.end();
     });

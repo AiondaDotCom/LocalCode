@@ -7,7 +7,7 @@ mlx:
   current_model: null
   timeout: 300
   context_window: 131072
-  max_tokens: 8192
+  max_tokens: 16384
 
 ollama:
   host: "localhost"

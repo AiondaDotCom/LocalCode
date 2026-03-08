@@ -27,9 +27,10 @@ function readContextFile(
 function loadUserContext(): ContextFile[] {
   const results: ContextFile[] = [];
 
-  // ~/.claude/CLAUDE.md
-  const userFile = path.join(os.homedir(), ".claude", "CLAUDE.md");
-  const ctx = readContextFile(userFile, "user");
+  // ~/.localcode/LOCALCODE.md (preferred) → ~/.claude/CLAUDE.md (fallback)
+  const localcodeUser = path.join(os.homedir(), ".localcode", "LOCALCODE.md");
+  const claudeUser = path.join(os.homedir(), ".claude", "CLAUDE.md");
+  const ctx = readContextFile(localcodeUser, "user") ?? readContextFile(claudeUser, "user");
   if (ctx !== null) results.push(ctx);
 
   return results;
@@ -41,12 +42,15 @@ function loadAncestorContext(cwd: string): ContextFile[] {
 
   let dir = path.dirname(cwd);
   while (dir !== path.dirname(dir) && dir !== home) {
-    const filePath = path.join(dir, "CLAUDE.md");
-    const ctx = readContextFile(filePath, "ancestor");
+    // LOCALCODE.md preferred, fallback to CLAUDE.md
+    const lcFile = path.join(dir, "LOCALCODE.md");
+    const clFile = path.join(dir, "CLAUDE.md");
+    const ctx = readContextFile(lcFile, "ancestor") ?? readContextFile(clFile, "ancestor");
     if (ctx !== null) results.push(ctx);
 
-    const altPath = path.join(dir, ".claude", "CLAUDE.md");
-    const altCtx = readContextFile(altPath, "ancestor");
+    const lcAlt = path.join(dir, ".localcode", "LOCALCODE.md");
+    const clAlt = path.join(dir, ".claude", "CLAUDE.md");
+    const altCtx = readContextFile(lcAlt, "ancestor") ?? readContextFile(clAlt, "ancestor");
     if (altCtx !== null) results.push(altCtx);
 
     dir = path.dirname(dir);
@@ -58,14 +62,16 @@ function loadAncestorContext(cwd: string): ContextFile[] {
 function loadProjectContext(cwd: string): ContextFile[] {
   const results: ContextFile[] = [];
 
-  // ./CLAUDE.md
-  const projectFile = path.join(cwd, "CLAUDE.md");
-  const ctx = readContextFile(projectFile, "project");
+  // LOCALCODE.md preferred, fallback to CLAUDE.md
+  const lcFile = path.join(cwd, "LOCALCODE.md");
+  const clFile = path.join(cwd, "CLAUDE.md");
+  const ctx = readContextFile(lcFile, "project") ?? readContextFile(clFile, "project");
   if (ctx !== null) results.push(ctx);
 
-  // ./.claude/CLAUDE.md (alternative location)
-  const altFile = path.join(cwd, ".claude", "CLAUDE.md");
-  const altCtx = readContextFile(altFile, "project");
+  // .localcode/ preferred, fallback to .claude/
+  const lcAlt = path.join(cwd, ".localcode", "LOCALCODE.md");
+  const clAlt = path.join(cwd, ".claude", "CLAUDE.md");
+  const altCtx = readContextFile(lcAlt, "project") ?? readContextFile(clAlt, "project");
   if (altCtx !== null) results.push(altCtx);
 
   return results;
@@ -74,9 +80,10 @@ function loadProjectContext(cwd: string): ContextFile[] {
 function loadLocalContext(cwd: string): ContextFile[] {
   const results: ContextFile[] = [];
 
-  // ./CLAUDE.local.md
-  const localFile = path.join(cwd, "CLAUDE.local.md");
-  const ctx = readContextFile(localFile, "local");
+  // LOCALCODE.local.md preferred, fallback to CLAUDE.local.md
+  const lcFile = path.join(cwd, "LOCALCODE.local.md");
+  const clFile = path.join(cwd, "CLAUDE.local.md");
+  const ctx = readContextFile(lcFile, "local") ?? readContextFile(clFile, "local");
   if (ctx !== null) results.push(ctx);
 
   return results;
@@ -84,7 +91,10 @@ function loadLocalContext(cwd: string): ContextFile[] {
 
 function loadRulesContext(cwd: string): ContextFile[] {
   const results: ContextFile[] = [];
-  const rulesDir = path.join(cwd, ".claude", "rules");
+  // .localcode/rules preferred, fallback to .claude/rules
+  const lcRulesDir = path.join(cwd, ".localcode", "rules");
+  const clRulesDir = path.join(cwd, ".claude", "rules");
+  const rulesDir = fs.existsSync(lcRulesDir) ? lcRulesDir : clRulesDir;
 
   if (!fs.existsSync(rulesDir)) return results;
 
@@ -120,8 +130,48 @@ export function loadContextFiles(cwd: string): ContextFile[] {
 
 export function loadSubdirContext(filePath: string): ContextFile | null {
   const dir = path.dirname(filePath);
-  const claudeFile = path.join(dir, "CLAUDE.md");
-  return readContextFile(claudeFile, "subdir");
+  const lcFile = path.join(dir, "LOCALCODE.md");
+  const clFile = path.join(dir, "CLAUDE.md");
+  return readContextFile(lcFile, "subdir") ?? readContextFile(clFile, "subdir");
+}
+
+export function generateInitContent(cwd: string): string {
+  const projectName = path.basename(cwd);
+  return `# ${projectName}
+
+## Project Overview
+
+<!-- Describe your project here -->
+
+## Tech Stack
+
+<!-- e.g. TypeScript, Node.js, React -->
+
+## Project Structure
+
+<!-- Key directories and their purpose -->
+
+## Development
+
+\`\`\`bash
+# Install dependencies
+# npm install
+
+# Run tests
+# npm test
+
+# Build
+# npm run build
+\`\`\`
+
+## Conventions
+
+<!-- Coding style, naming conventions, patterns to follow -->
+
+## Important Notes
+
+<!-- Anything the AI agent should know when working on this project -->
+`;
 }
 
 export function buildContextPrompt(files: ContextFile[]): string {

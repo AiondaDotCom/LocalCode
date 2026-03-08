@@ -15,7 +15,7 @@ LocalCode connects to a local LLM (MLX or Ollama), provides coding tools (file r
 - **MLX auto-start** — automatically starts the MLX server if not running
 - **MLX auto-restart** — restarts the server on crash/hang during sessions
 - **MCP support** — Model Context Protocol for external tool servers
-- **CLAUDE.md compatible** — reads CLAUDE.md files in the same order as Claude Code
+- **LOCALCODE.md & CLAUDE.md** — reads LOCALCODE.md files first, falls back to CLAUDE.md (fully compatible with Claude Code)
 - **Permission system** — SAFE/DANGEROUS/BLOCKED tool classification with "always allow" option
 - **Session management** — save/load chat sessions
 - **14 built-in tools** — read, write, edit, bash, glob, grep, list, websearch, webopen, webfind, webfetch, task, todoread, todowrite
@@ -68,9 +68,11 @@ The Qwen3 chat template is bundled in `config/qwen3_chat_template.jinja` and use
 /tools           List available tools
 /permissions     Show permission settings
 /mcp             Show MCP server status
+/init            Generate LOCALCODE.md in current directory
 /save <name>     Save session
 /load <name>     Load session
 /sessions        List saved sessions
+/compact         Compress conversation history
 /pwd             Show working directory
 /cd [path]       Change directory
 /clear           Clear session
@@ -92,6 +94,49 @@ node dist/index.js mcp list
 # Remove a server
 node dist/index.js mcp remove my-server
 ```
+
+## Project Instructions (LOCALCODE.md)
+
+LocalCode loads project instructions from markdown files, similar to Claude Code. Use `/init` to generate a template.
+
+**Lookup order** (first match wins at each level):
+
+| Scope | Paths checked (in order) |
+|-------|--------------------------|
+| User | `~/.localcode/LOCALCODE.md` → `~/.claude/CLAUDE.md` |
+| Ancestor | `../LOCALCODE.md` → `../CLAUDE.md` (walks up to home) |
+| Project | `./LOCALCODE.md` → `./CLAUDE.md` |
+| Project (alt) | `./.localcode/LOCALCODE.md` → `./.claude/CLAUDE.md` |
+| Local | `./LOCALCODE.local.md` → `./CLAUDE.local.md` |
+| Rules | `./.localcode/rules/*.md` → `./.claude/rules/*.md` |
+
+This means you can use `LOCALCODE.md` for LocalCode-specific instructions while keeping `CLAUDE.md` for Claude Code — or share the same file for both.
+
+## Sandbox Mode
+
+Run LocalCode inside a Docker container for safe, isolated execution. The LLM can do anything — file changes stay inside the container, only your mounted workspace is affected.
+
+```bash
+# Interactive sandbox (mounts current directory read-write)
+localcode sandbox
+
+# Read-only workspace (model can read but not modify your files)
+localcode sandbox --read-only
+
+# One-shot prompt in sandbox
+localcode sandbox "refactor all files to use async/await"
+
+# Use Ollama backend instead of MLX
+localcode sandbox --backend ollama
+```
+
+Inside the sandbox:
+- All permissions are auto-approved (`--dangerously-skip-permissions`)
+- The workspace is mounted at `/workspace`
+- The LLM backend connects to the host via `host.docker.internal`
+- Your `~/.localcode` config is mounted read-only
+
+Requires Docker Desktop or Docker Engine.
 
 ## CLI Options
 
@@ -122,7 +167,7 @@ src/
   session.ts         Chat session management
   config.ts          YAML config loader
   permissions.ts     Permission system
-  context.ts         CLAUDE.md file loader
+  context.ts         LOCALCODE.md / CLAUDE.md file loader
   mlx.ts             MLX server start/stop/restart
   types.ts           Shared TypeScript types
   tools/

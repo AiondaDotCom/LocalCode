@@ -66,12 +66,13 @@ describe("Context (CLAUDE.md)", () => {
       expect(projectFiles).toHaveLength(0);
     });
 
-    it("should truncate files over 200 lines", () => {
-      const longContent = Array.from({ length: 300 }, (_, i) => `Line ${String(i + 1)}`).join("\n");
+    it("should truncate files over 20000 chars with smart truncation", () => {
+      const longContent = "x".repeat(25000);
       fs.writeFileSync(path.join(tempDir, "CLAUDE.md"), longContent);
       const files = loadContextFiles(tempDir);
       const project = files.find((f) => f.scope === "project");
-      expect(project?.content).toContain("truncated");
+      expect(project?.content).toContain("chars truncated");
+      expect(project!.content.length).toBeLessThan(25000);
     });
   });
 

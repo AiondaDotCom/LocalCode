@@ -16,6 +16,7 @@ import {
 import { loadContextFiles, buildContextPrompt } from "./context.js";
 import { createMCPTools } from "./tools/mcp.js";
 import type { LocalTool } from "./mcp/servers/local.js";
+import { LRUCache } from "./lru-cache.js";
 
 interface UsageStats {
   total_tokens: number;
@@ -96,45 +97,68 @@ export class UI {
     this.mcpTools = createMCPTools(mcpRegistry, mcpManager);
   }
 
+  /** Build tool list for system prompt with exact names and parameters */
+  private buildToolsPrompt(): string[] {
+    const tools = this.buildToolsArray();
+    return tools.map((t) => {
+      const params = Object.entries(t.function.parameters.properties ?? {} as Record<string, { type?: string; description?: string }>)
+        .map(([name, schema]) => {
+          const s = schema as { type?: string; description?: string };
+          return `${name}${s.type ? `: ${s.type}` : ""}`;
+        })
+        .join(", ");
+      return `- ${t.function.name}(${params}) — ${t.function.description}`;
+    });
+  }
+
+  /** Strip <think>...</think> and <final>...</final> tags from stored content */
+  private stripReasoningTags(text: string): string {
+    return text
+      .replace(/<think>[\s\S]*?<\/think>/g, "")
+      .replace(/<\/?final>/g, "")
+      .trim();
+  }
+
   buildSystemPrompt(): string {
     const contextFiles = loadContextFiles(process.cwd());
     const contextPrompt = buildContextPrompt(contextFiles);
     const cwd = process.cwd();
+    const model = this.client.getCurrentModel() ?? "unknown";
+    const backend = this.client.getBackend();
+    const platform = process.platform;
+    const shell = process.env["SHELL"] ?? "unknown";
+    const arch = process.arch;
 
     return [
+      // Identity
       "You are LocalCode, an AI coding agent. You help with software engineering tasks.",
       "",
-      `Working directory: ${cwd}`,
+
+      // Runtime info
+      "# Runtime",
+      `- Working directory: ${cwd}`,
+      `- Platform: ${platform} (${arch})`,
+      `- Shell: ${shell}`,
+      `- Model: ${model} (${backend})`,
+      `- Date: ${new Date().toISOString().slice(0, 10)}`,
       "",
-      "CRITICAL RULES - YOU MUST FOLLOW THESE:",
-      "1. NEVER output code in ```bash or ```sh code blocks. ALWAYS use the bash tool instead.",
-      "2. NEVER output file contents in ```code blocks. ALWAYS use the write or edit tool instead.",
-      "3. EVERY command must be executed via the bash tool, not shown as text.",
-      "4. EVERY file must be created via the write tool, not shown as text.",
-      "5. If you catch yourself about to write a code block, STOP and use a tool instead.",
+
+      // Tool calling style (minimal narration)
+      "# Tool Calling",
+      "Call tools directly. Keep narration minimal — only explain when the action is complex or destructive.",
+      "Do NOT show code in text. Use tool calls for all actions.",
+      "Never fabricate tool results. Call the tool for each item separately.",
       "",
-      "Available tools:",
-      "- bash(command): Run ANY shell command (git, npm, cd, ls, make, etc.)",
-      "- write(file_path, content): Create or overwrite a file",
-      "- edit(file_path, old_text, new_text): Edit part of a file",
-      "- read(file_path): Read a file",
-      "- grep(pattern, path): Search file contents",
-      "- glob(pattern): Find files by name",
-      "- list(path): List directory contents",
-      "- webfetch(url): Fetch and read a URL",
-      "- mcp_add(name, command, args): Add an MCP server (starts immediately)",
-      "- mcp_remove(name): Remove an MCP server",
-      "- mcp_list(): List MCP servers and their tools",
+
+      // Available tools — built-in + dynamic MCP tools
+      "# Tools",
+      "IMPORTANT: Use EXACT tool names as listed. Do NOT invent or guess tool names.",
       "",
-      "When the user gives you a URL, FIRST use `webfetch` to read its content.",
-      "When the user asks you to install or clone something, use the `bash` tool.",
-      "When the user asks you to create a program, use the `write` tool.",
-      "When the user asks you to run something, use the `bash` tool.",
-      "NEVER show code as text. ALWAYS execute it via tools.",
-      "NEVER fabricate, guess, or hallucinate tool results. You MUST call the tool for EACH item separately.",
-      "If asked to check multiple servers/files/items, call the tool once for EACH one. Do NOT skip any.",
-      "Only report results you actually received from tool calls.",
+      ...this.buildToolsPrompt(),
       "",
+
+
+      // Context files
       contextPrompt,
     ].join("\n");
   }
@@ -931,27 +955,73 @@ Keep it concise and practical. Focus on information an AI agent needs to work on
       };
 
       let trailingNewlines = 0;
+      let insideThink = false;
+      let thinkBuffer = "";
       const onToken = (token: string): void => {
         if (firstToken) {
           firstToken = false;
           stopSpinner();
         }
-        // Suppress excessive trailing newlines (max 2)
-        if (token === "\n" || token === "\n\n") {
-          trailingNewlines += token.length;
-          if (trailingNewlines > 2) return;
-        } else {
-          trailingNewlines = 0;
+
+        // Accumulate for tag detection
+        thinkBuffer += token;
+
+        // Handle <think> opening
+        if (!insideThink && thinkBuffer.includes("<think>")) {
+          const before = thinkBuffer.slice(0, thinkBuffer.indexOf("<think>"));
+          if (before.trim() !== "") outputText(before);
+          thinkBuffer = thinkBuffer.slice(thinkBuffer.indexOf("<think>") + 7);
+          insideThink = true;
+          process.stdout.write("\x1b[90m[thinking...]\x1b[0m");
         }
-        tokenBuffer += token;
+
+        // Handle </think> closing
+        if (insideThink && thinkBuffer.includes("</think>")) {
+          thinkBuffer = thinkBuffer.slice(thinkBuffer.indexOf("</think>") + 8);
+          insideThink = false;
+          process.stdout.write("\r\x1b[2K");
+        }
+
+        // Inside <think> block — suppress output
+        if (insideThink) return;
+
+        // Strip complete <final> and </final> tags
+        thinkBuffer = thinkBuffer.replace(/<\/?final>/g, "");
+
+        // Hold back if buffer ends with a partial tag (e.g. "<", "<fi", "</fin")
+        // to avoid outputting incomplete tags character by character
+        const partialTagMatch = thinkBuffer.match(/<[/a-z]*$/i);
+        if (partialTagMatch !== null) {
+          const safe = thinkBuffer.slice(0, partialTagMatch.index);
+          if (safe.length > 0) outputText(safe);
+          thinkBuffer = partialTagMatch[0];
+          return;
+        }
+
+        // Flush processed text
+        if (thinkBuffer.length > 0) {
+          outputText(thinkBuffer);
+          thinkBuffer = "";
+        }
+      };
+
+      const outputText = (text: string): void => {
+        // Suppress excessive trailing newlines (max 2)
+        for (const ch of text) {
+          if (ch === "\n") {
+            trailingNewlines++;
+            if (trailingNewlines > 2) continue;
+          } else {
+            trailingNewlines = 0;
+          }
+          tokenBuffer += ch;
+        }
         // Process all complete ** markers in the buffer
         while (tokenBuffer.includes("**")) {
           const idx = tokenBuffer.indexOf("**");
-          // Output text before the marker
           if (idx > 0) {
             process.stdout.write(tokenBuffer.slice(0, idx));
           }
-          // Toggle bold
           boldOpen = !boldOpen;
           process.stdout.write(boldOpen ? "\x1b[1m" : "\x1b[22m");
           tokenBuffer = tokenBuffer.slice(idx + 2);
@@ -971,7 +1041,7 @@ Keep it concise and practical. Focus on information an AI agent needs to work on
       // Agentic loop: keep executing tools until model gives pure text
       let currentTools: typeof tools | undefined = tools;
       let maxRounds = Infinity;
-      let lastCallKey = "";
+      const toolCallCache = new LRUCache<number>(1024);
       let hadToolCalls = false;
       let textOnlyRounds = 0;
 
@@ -985,7 +1055,7 @@ Keep it concise and practical. Focus on information an AI agent needs to work on
         if (abortSignal.aborted) {
           const partial = response.message.content;
           if (partial.trim() !== "") {
-            this.session.addMessage("assistant", partial);
+            this.session.addMessage("assistant", this.stripReasoningTags(partial));
           }
           break;
         }
@@ -1003,7 +1073,7 @@ Keep it concise and practical. Focus on information an AI agent needs to work on
         if (toolCalls.length === 0) {
           process.stdout.write("\n");
           this.showGenerationStats(response);
-          this.session.addMessage("assistant", content);
+          this.session.addMessage("assistant", this.stripReasoningTags(content));
 
           // If we had tool calls before, check if the original question is answered
           textOnlyRounds++;
@@ -1036,20 +1106,26 @@ Keep it concise and practical. Focus on information an AI agent needs to work on
           break;
         }
 
-        // Loop detection: only trigger if exact same calls as previous round
+        // Loop detection: LRU cache tracks last 1024 unique tool call signatures
         const callKey = toolCalls.map((c) => `${c.name}:${JSON.stringify(c.arguments)}`).join("|");
-        if (callKey === lastCallKey) {
-          console.log(`\n\x1b[33m[loop detected — skipping duplicate, continuing with results]\x1b[0m`);
+        const seenCount = toolCallCache.get(callKey) ?? 0;
+        if (seenCount >= 1) {
+          console.log(`\n\x1b[33m[loop detected — duplicate tool call (seen ${String(seenCount + 1)}x), skipping]\x1b[0m`);
           this.showGenerationStats(response);
-          // Don't execute again, but add a hint and let model try with text
-          this.session.addMessage("assistant", content);
-          this.session.addMessage("tool", "You already called this tool and got the result above. Use the previous result to proceed. Do NOT call the same tool again.");
-          // One more chance without the duplicate
-          lastCallKey = "";
-          currentTools = tools;
+          this.session.addMessage("assistant", this.stripReasoningTags(content));
+          toolCallCache.set(callKey, seenCount + 1);
+          if (seenCount >= 2) {
+            // 3rd duplicate: give up, force text-only response
+            this.session.addMessage("tool", "STOP calling tools. You are in a loop. Answer the user's question NOW using the results you already have.");
+            currentTools = undefined;
+          } else {
+            // 2nd duplicate: warn and remove tools for next round
+            this.session.addMessage("tool", "You already called this exact tool with these arguments. The result is above. Use the previous result to answer. Do NOT call any more tools.");
+            currentTools = undefined;
+          }
           continue;
         }
-        lastCallKey = callKey;
+        toolCallCache.set(callKey, 1);
         hadToolCalls = true;
         textOnlyRounds = 0;
 
@@ -1071,13 +1147,13 @@ Keep it concise and practical. Focus on information an AI agent needs to work on
           console.log(`\n${tag} ${result.tool}:\n${this.compactOutput(result.output)}`);
         }
         if (abortSignal.aborted) {
-          this.session.addMessage("assistant", content);
+          this.session.addMessage("assistant", this.stripReasoningTags(content));
           break;
         }
 
         const resultText = this.formatToolResults(results);
 
-        this.session.addMessage("assistant", content);
+        this.session.addMessage("assistant", this.stripReasoningTags(content));
         this.session.addMessage("tool", resultText);
 
         // Next round: keep tools available so model can make further calls

@@ -3,7 +3,25 @@ import * as path from "node:path";
 import * as os from "node:os";
 import type { ContextFile, ContextScope } from "./types.js";
 
-const MAX_LINES = 200;
+/** Per-file character budget */
+const MAX_FILE_CHARS = 20_000;
+/** Total character budget across all context files */
+const MAX_TOTAL_CHARS = 150_000;
+
+/**
+ * Smart truncation: keeps 70% from the start + 20% from the end,
+ * with a marker in between. This preserves both the project overview
+ * (usually at the top) and recent/important notes (often at the bottom).
+ */
+function smartTruncate(content: string, maxChars: number): string {
+  if (content.length <= maxChars) return content;
+  const headSize = Math.floor(maxChars * 0.7);
+  const tailSize = Math.floor(maxChars * 0.2);
+  const head = content.slice(0, headSize);
+  const tail = content.slice(-tailSize);
+  const skipped = content.length - headSize - tailSize;
+  return `${head}\n\n[... ${String(skipped)} chars truncated ...]\n\n${tail}`;
+}
 
 function readContextFile(
   filePath: string,
@@ -13,11 +31,7 @@ function readContextFile(
 
   try {
     let content = fs.readFileSync(filePath, "utf-8");
-    const lines = content.split("\n");
-    if (lines.length > MAX_LINES) {
-      content = lines.slice(0, MAX_LINES).join("\n");
-      content += `\n\n[... truncated at ${String(MAX_LINES)} lines]`;
-    }
+    content = smartTruncate(content, MAX_FILE_CHARS);
     return { path: filePath, content, scope };
   } catch {
     return null;
@@ -177,10 +191,23 @@ export function generateInitContent(cwd: string): string {
 export function buildContextPrompt(files: ContextFile[]): string {
   if (files.length === 0) return "";
 
-  const sections = files.map((f) => {
+  const sections: string[] = [];
+  let totalChars = 0;
+
+  for (const f of files) {
     const label = `[${f.scope}] ${f.path}`;
-    return `--- ${label} ---\n${f.content}`;
-  });
+    const section = `--- ${label} ---\n${f.content}`;
+    if (totalChars + section.length > MAX_TOTAL_CHARS) {
+      const remaining = MAX_TOTAL_CHARS - totalChars;
+      if (remaining > 200) {
+        sections.push(smartTruncate(section, remaining));
+      }
+      sections.push(`\n[... context truncated at ${String(MAX_TOTAL_CHARS)} chars total]`);
+      break;
+    }
+    sections.push(section);
+    totalChars += section.length;
+  }
 
   return (
     "# Project & User Instructions\n\n" +

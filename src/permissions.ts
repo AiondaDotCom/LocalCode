@@ -100,7 +100,7 @@ export class Permissions {
     }
 
     if (this.skipAllPermissions) {
-      return true;
+      return this.countdownAllow(tool, args);
     }
 
     if (this.rememberedPermissions.has(tool)) {
@@ -115,6 +115,73 @@ export class Permissions {
     }
 
     return this.promptUser(tool, args);
+  }
+
+  /**
+   * 3-second countdown for --dangerously-skip-permissions mode.
+   * Shows the tool call and counts down. Press ESC to cancel.
+   */
+  private countdownAllow(tool: string, args?: string): Promise<boolean> {
+    const display = args !== undefined && args !== "" ? `${tool}: ${args}` : tool;
+    const seconds = 2;
+
+    return new Promise((resolve) => {
+      let remaining = seconds;
+      const stdin = process.stdin;
+
+      // No TTY (tests, piped input) — skip countdown
+      if (!stdin.isTTY) {
+        resolve(true);
+        return;
+      }
+
+      const wasRaw = stdin.isRaw ?? false;
+
+      const showCountdown = (): void => {
+        process.stdout.write(`\r\x1b[2K\x1b[33m⚡ ${display} \x1b[90m[${String(remaining)}s — ESC to cancel]\x1b[0m`);
+      };
+
+      showCountdown();
+
+      if (stdin.isTTY) {
+        stdin.setRawMode(true);
+      }
+      stdin.resume();
+
+      let done = false;
+      const cleanup = (result: boolean): void => {
+        if (done) return;
+        done = true;
+        clearInterval(timer);
+        stdin.removeListener("data", onKey);
+        if (stdin.isTTY) {
+          stdin.setRawMode(wasRaw);
+        }
+        if (result) {
+          process.stdout.write(`\r\x1b[2K`);
+        } else {
+          process.stdout.write(`\r\x1b[2K\x1b[31m✖ Cancelled: ${display}\x1b[0m\n`);
+        }
+        resolve(result);
+      };
+
+      const onKey = (data: Buffer): void => {
+        // ESC = 0x1b, Ctrl+C = 0x03
+        if (data[0] === 0x1b || data[0] === 0x03) {
+          cleanup(false);
+        }
+      };
+      stdin.on("data", onKey);
+
+      const timer = setInterval(() => {
+        remaining--;
+        if (remaining <= 0) {
+          cleanup(true);
+        } else {
+          showCountdown();
+        }
+      }, 1000);
+    });
   }
 
   private async promptUser(

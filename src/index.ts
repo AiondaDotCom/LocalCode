@@ -53,7 +53,7 @@ async function main(): Promise<void> {
       if (opts["dangerouslySkipPermissions"] === true) {
         permissions.setDangerouslySkipPermissions(true);
         console.warn(
-          "\x1b[31m⚠ All permission checks disabled – tools execute without confirmation\x1b[0m",
+          "\x1b[33m⚠ All permission checks disabled – tools execute without confirmation\x1b[0m",
         );
       }
       if (opts["autoYes"] === true) {

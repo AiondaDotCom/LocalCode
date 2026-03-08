@@ -809,7 +809,34 @@ Keep it concise and practical. Focus on information an AI agent needs to work on
     try {
       let boldOpen = false;
       let tokenBuffer = "";
+      let firstToken = true;
+      let spinnerTimer: ReturnType<typeof setInterval> | null = null;
+      const spinnerFrames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+      let spinnerIdx = 0;
+
+      const startSpinner = (): void => {
+        firstToken = true;
+        spinnerIdx = 0;
+        process.stdout.write(`\x1b[90m${spinnerFrames[0]} \x1b[0m`);
+        spinnerTimer = setInterval(() => {
+          spinnerIdx = (spinnerIdx + 1) % spinnerFrames.length;
+          process.stdout.write(`\r\x1b[90m${spinnerFrames[spinnerIdx]} \x1b[0m`);
+        }, 80);
+      };
+
+      const stopSpinner = (): void => {
+        if (spinnerTimer !== null) {
+          clearInterval(spinnerTimer);
+          spinnerTimer = null;
+          process.stdout.write("\r\x1b[2K");
+        }
+      };
+
       const onToken = (token: string): void => {
+        if (firstToken) {
+          firstToken = false;
+          stopSpinner();
+        }
         tokenBuffer += token;
         // Process all complete ** markers in the buffer
         while (tokenBuffer.includes("**")) {
@@ -846,7 +873,9 @@ Keep it concise and practical. Focus on information an AI agent needs to work on
         if (abortSignal.aborted) break;
         const currentMessages = this.session.getMessagesForChat(systemPrompt);
 
+        startSpinner();
         const response = await this.client.chat(currentMessages, undefined, currentTools, onToken, abortSignal);
+        stopSpinner();
         if (abortSignal.aborted) {
           const partial = response.message.content;
           if (partial.trim() !== "") {
@@ -870,9 +899,27 @@ Keep it concise and practical. Focus on information an AI agent needs to work on
           this.showGenerationStats(response);
           this.session.addMessage("assistant", content);
 
-          // If we had tool calls before, nudge the model to continue with tools
+          // If we had tool calls before, check if the original question is answered
           textOnlyRounds++;
           if (hadToolCalls && maxRounds > 1 && textOnlyRounds <= 3) {
+            // Ask the model if the original task is complete
+            const checkPrompt = `Is the user's original request fully completed? The user asked: "${input}"\nAnswer ONLY "yes" or "no".`;
+            const checkMessages: Message[] = [
+              { role: "system", content: "Answer only 'yes' or 'no'." },
+              { role: "user", content: checkPrompt },
+              { role: "assistant", content: content },
+            ];
+            try {
+              const checkResponse = await this.client.chat(checkMessages, undefined, undefined, undefined, abortSignal);
+              const answer = checkResponse.message.content.trim().toLowerCase();
+              if (answer.startsWith("yes")) {
+                break;
+              }
+            } catch {
+              // If check fails, don't retry
+              break;
+            }
+
             const nudge = textOnlyRounds === 1
               ? "Continue."
               : "You MUST use tool calls now. Do NOT write text — call a tool to proceed.";

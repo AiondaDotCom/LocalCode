@@ -17,6 +17,51 @@ import { loadContextFiles, buildContextPrompt } from "./context.js";
 import { createMCPTools } from "./tools/mcp.js";
 import type { LocalTool } from "./mcp/servers/local.js";
 
+interface UsageStats {
+  total_tokens: number;
+  total_prompt_tokens: number;
+  total_completion_tokens: number;
+  total_requests: number;
+  total_tool_calls: number;
+  first_used: string;
+  last_used: string;
+}
+
+const STATS_FILE = path.join(
+  process.env["HOME"] ?? "",
+  ".localcode",
+  "stats.json",
+);
+
+function loadStats(): UsageStats {
+  try {
+    if (fs.existsSync(STATS_FILE)) {
+      return JSON.parse(fs.readFileSync(STATS_FILE, "utf-8")) as UsageStats;
+    }
+  } catch {
+    // ignore
+  }
+  return {
+    total_tokens: 0,
+    total_prompt_tokens: 0,
+    total_completion_tokens: 0,
+    total_requests: 0,
+    total_tool_calls: 0,
+    first_used: new Date().toISOString(),
+    last_used: new Date().toISOString(),
+  };
+}
+
+function saveStats(stats: UsageStats): void {
+  try {
+    const dir = path.dirname(STATS_FILE);
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(STATS_FILE, JSON.stringify(stats, null, 2) + "\n", "utf-8");
+  } catch {
+    // ignore
+  }
+}
+
 export class UI {
   private client: Client;
   private session: Session;
@@ -27,6 +72,13 @@ export class UI {
   private rl: readline.Interface | null = null;
   private running = false;
   private abortController: AbortController | null = null;
+  private stats: UsageStats = loadStats();
+  private sessionTokens = 0;
+  private sessionPromptTokens = 0;
+  private sessionCompletionTokens = 0;
+  private sessionRequests = 0;
+  private sessionToolCalls = 0;
+  private sessionStart = new Date();
 
   constructor(
     client: Client,
@@ -189,8 +241,8 @@ export class UI {
         .join(", ");
       console.log(`\x1b[90m  → ${resolved.serverName}.${resolved.toolName}(${argsDisplay})\x1b[0m`);
       const allowed = await this.permissions.requestPermission(
-        "shell_exec",
-        `MCP: ${call.name}`,
+        call.name,
+        argsDisplay,
       );
       if (!allowed) {
         return {
@@ -234,14 +286,9 @@ export class UI {
     const permission = getLocalToolPermission(toolName);
 
     if (permission === "dangerous") {
-      const permissionKey = toolName === "bash" || toolName === "task"
-        ? "shell_exec"
-        : toolName === "write" || toolName === "edit"
-          ? "file_write"
-          : "shell_exec";
       const allowed = await this.permissions.requestPermission(
-        permissionKey,
-        `${toolName}: ${JSON.stringify(call.arguments)}`,
+        toolName,
+        JSON.stringify(call.arguments),
       );
       if (!allowed) {
         return {
@@ -332,6 +379,10 @@ export class UI {
 
       case "/version":
         console.log(`LocalCode v${this.config.getVersion()}`);
+        return true;
+
+      case "/stats":
+        this.showStats();
         return true;
 
       case "/models":
@@ -453,6 +504,7 @@ LocalCode v${this.config.getVersion()} - Commands:
   /mlx <cmd>       MLX server: start, stop, restart, status
   /pwd             Show working directory
   /cd [path]       Change directory
+  /stats           Show token usage statistics
   /version         Show version
   /help            Show this help
   /exit            Exit
@@ -658,7 +710,39 @@ Keep it concise and practical. Focus on information an AI agent needs to work on
     }
   }
 
+  private showStats(): void {
+    const elapsed = Date.now() - this.sessionStart.getTime();
+    const mins = Math.floor(elapsed / 60000);
+    const secs = Math.floor((elapsed % 60000) / 1000);
+    const duration = mins > 0 ? `${String(mins)}m ${String(secs)}s` : `${String(secs)}s`;
+
+    const fmt = (n: number): string => n.toLocaleString();
+
+    console.log(`\n\x1b[1mSession:\x1b[0m`);
+    console.log(`  Duration:      ${duration}`);
+    console.log(`  Requests:      ${fmt(this.sessionRequests)}`);
+    console.log(`  Tool calls:    ${fmt(this.sessionToolCalls)}`);
+    console.log(`  Input tokens:  ${fmt(this.sessionPromptTokens)}`);
+    console.log(`  Output tokens: ${fmt(this.sessionCompletionTokens)}`);
+    console.log(`  Total tokens:  ${fmt(this.sessionTokens)}`);
+
+    console.log(`\n\x1b[1mAll time:\x1b[0m`);
+    console.log(`  Requests:      ${fmt(this.stats.total_requests)}`);
+    console.log(`  Tool calls:    ${fmt(this.stats.total_tool_calls)}`);
+    console.log(`  Input tokens:  ${fmt(this.stats.total_prompt_tokens)}`);
+    console.log(`  Output tokens: ${fmt(this.stats.total_completion_tokens)}`);
+    console.log(`  Total tokens:  ${fmt(this.stats.total_tokens)}`);
+    console.log(`  Since:         ${this.stats.first_used.slice(0, 10)}`);
+  }
+
   private showPermissions(): void {
+    const allowed = this.permissions.getRememberedTools();
+    if (allowed.length > 0) {
+      console.log("\n\x1b[32mAlways allowed:\x1b[0m");
+      for (const t of allowed) {
+        console.log(`  ${t}`);
+      }
+    }
     console.log("\nSafe (auto-allow):");
     for (const t of this.permissions.getSafeTools()) {
       console.log(`  ${t}`);
@@ -752,6 +836,20 @@ Keep it concise and practical. Focus on information an AI agent needs to work on
     if (ctx.completion_tokens > 0) {
       parts.push(`${String(ctx.completion_tokens)} tokens`);
     }
+
+    // Track session stats
+    this.sessionPromptTokens += ctx.prompt_tokens;
+    this.sessionCompletionTokens += ctx.completion_tokens;
+    this.sessionTokens += ctx.prompt_tokens + ctx.completion_tokens;
+    this.sessionRequests++;
+
+    // Track cumulative stats
+    this.stats.total_prompt_tokens += ctx.prompt_tokens;
+    this.stats.total_completion_tokens += ctx.completion_tokens;
+    this.stats.total_tokens += ctx.prompt_tokens + ctx.completion_tokens;
+    this.stats.total_requests++;
+    this.stats.last_used = new Date().toISOString();
+    saveStats(this.stats);
     // Use actual prompt_tokens from server if available, else estimate
     const usedTokens = ctx.prompt_tokens > 0
       ? ctx.prompt_tokens + ctx.completion_tokens
@@ -832,10 +930,18 @@ Keep it concise and practical. Focus on information an AI agent needs to work on
         }
       };
 
+      let trailingNewlines = 0;
       const onToken = (token: string): void => {
         if (firstToken) {
           firstToken = false;
           stopSpinner();
+        }
+        // Suppress excessive trailing newlines (max 2)
+        if (token === "\n" || token === "\n\n") {
+          trailingNewlines += token.length;
+          if (trailingNewlines > 2) return;
+        } else {
+          trailingNewlines = 0;
         }
         tokenBuffer += token;
         // Process all complete ** markers in the buffer
@@ -958,6 +1064,11 @@ Keep it concise and practical. Focus on information an AI agent needs to work on
           if (abortSignal.aborted) break;
           const result = await this.executeTool(call);
           results.push(result);
+          this.stats.total_tool_calls++;
+          this.sessionToolCalls++;
+          // Show each result immediately
+          const tag = result.success ? "\x1b[32m[OK]\x1b[0m" : "\x1b[31m[ERR]\x1b[0m";
+          console.log(`\n${tag} ${result.tool}:\n${this.compactOutput(result.output)}`);
         }
         if (abortSignal.aborted) {
           this.session.addMessage("assistant", content);
@@ -965,7 +1076,6 @@ Keep it concise and practical. Focus on information an AI agent needs to work on
         }
 
         const resultText = this.formatToolResults(results);
-        console.log(`\n${resultText}`);
 
         this.session.addMessage("assistant", content);
         this.session.addMessage("tool", resultText);
@@ -1097,7 +1207,7 @@ Keep it concise and practical. Focus on information an AI agent needs to work on
     const commands = [
       "/help", "/version", "/models", "/model", "/current",
       "/tools", "/permissions", "/mcp", "/save", "/load",
-      "/sessions", "/clear", "/compact", "/init", "/mlx", "/pwd", "/cd", "/exit",
+      "/sessions", "/clear", "/compact", "/init", "/mlx", "/stats", "/pwd", "/cd", "/exit",
     ];
 
     if (line.startsWith("/")) {

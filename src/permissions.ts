@@ -1,3 +1,6 @@
+import * as fs from "node:fs";
+import * as path from "node:path";
+import * as os from "node:os";
 import {
   PermissionLevel,
   type PermissionLevelValue,
@@ -7,6 +10,8 @@ import {
 } from "./types.js";
 
 export type PermissionPrompter = (message: string) => Promise<string>;
+
+const ALLOWED_TOOLS_FILE = path.join(os.homedir(), ".localcode", "allowed_tools.json");
 
 const DEFAULT_TOOL_PERMISSIONS: Record<string, PermissionLevelValue> = {
   // SAFE
@@ -49,6 +54,8 @@ export class Permissions {
         this.permissions[tool] = PermissionLevel.BLOCKED;
       }
     }
+
+    this.loadAllowedTools();
   }
 
   setDangerouslySkipPermissions(skip: boolean): void {
@@ -130,13 +137,44 @@ export class Permissions {
 
     if (response === "a") {
       this.rememberedPermissions.add(tool);
+      this.saveAllowedTools();
       return true;
     }
     return response === "y";
   }
 
+  private loadAllowedTools(): void {
+    try {
+      if (fs.existsSync(ALLOWED_TOOLS_FILE)) {
+        const data = JSON.parse(fs.readFileSync(ALLOWED_TOOLS_FILE, "utf-8")) as string[];
+        for (const tool of data) {
+          this.rememberedPermissions.add(tool);
+        }
+      }
+    } catch {
+      // ignore corrupt file
+    }
+  }
+
+  private saveAllowedTools(): void {
+    try {
+      const dir = path.dirname(ALLOWED_TOOLS_FILE);
+      if (!fs.existsSync(dir)) {
+        fs.mkdirSync(dir, { recursive: true });
+      }
+      fs.writeFileSync(
+        ALLOWED_TOOLS_FILE,
+        JSON.stringify([...this.rememberedPermissions].sort(), null, 2) + "\n",
+        "utf-8",
+      );
+    } catch {
+      // ignore write errors
+    }
+  }
+
   resetRememberedPermissions(): void {
     this.rememberedPermissions.clear();
+    this.saveAllowedTools();
   }
 
   getSafeTools(): string[] {
@@ -155,6 +193,10 @@ export class Permissions {
     return Object.entries(this.permissions)
       .filter(([, level]) => level === PermissionLevel.BLOCKED)
       .map(([name]) => name);
+  }
+
+  getRememberedTools(): string[] {
+    return [...this.rememberedPermissions].sort();
   }
 
   getAllPermissions(): Record<string, PermissionLevelValue> {
